@@ -1,0 +1,138 @@
+// ABOUTME: 与后端对齐的数据结构定义
+
+export type Role = 'admin' | 'member';
+export type UserStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
+export type MessageType = 'text' | 'image' | 'file';
+export type ConversationType = 'direct' | 'group';
+
+export interface User {
+  id: number;
+  username: string;
+  displayName: string;
+  role: Role;
+}
+
+export interface FileRef {
+  id: number;
+  name: string;
+  size: number;
+  mime: string;
+}
+
+export interface Message {
+  id: number;
+  conversationId: number;
+  senderId: number;
+  senderName: string;
+  type: MessageType;
+  content: string;
+  file: FileRef | null;
+  createdAt: string;
+}
+
+export interface OtherUser {
+  id: number;
+  username: string;
+  displayName: string;
+}
+
+export interface Conversation {
+  id: number;
+  type: ConversationType;
+  name: string | null;
+  title: string;
+  creatorId: number | null;
+  memberCount: number;
+  unreadCount: number;
+  otherUser: OtherUser | null;
+  lastMessage: Message | null;
+  createdAt: string;
+}
+
+export interface Member {
+  id: number;
+  username: string;
+  displayName: string;
+  isCreator: boolean;
+  joinedAt: string;
+  lastReadAt: string;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  displayName: string;
+  role: Role;
+  status: UserStatus;
+  rejectReason: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewerName: string | null;
+}
+
+export interface AdminGroup {
+  id: number;
+  name: string;
+  creatorName: string;
+  memberCount: number;
+  messageCount: number;
+  createdAt: string;
+}
+
+export interface AdminStats {
+  users: { total: number; pending: number; approved: number; rejected: number; disabled: number };
+  conversations: { group: number; direct: number };
+  messages: { total: number; today: number };
+  files: { count: number; bytes: number };
+  online: number;
+}
+
+// ---- WebSocket 协议 ----
+
+export interface WsMessage<T = unknown> {
+  type: string;
+  payload: T;
+}
+
+export interface WsReadyPayload {
+  userId: number;
+  onlineUserIds: number[];
+}
+
+export interface WsPresencePayload {
+  userId: number;
+  online: boolean;
+}
+
+export interface WsConversationPayload {
+  conversation: Conversation;
+}
+
+export interface WsMessagePayload {
+  message: Message;
+}
+
+export interface WsAckPayload {
+  clientId?: string;
+  message: Message;
+}
+
+export interface WsReadPayload {
+  conversationId: number;
+  userId: number;
+}
+
+export interface WsTypingPayload {
+  conversationId: number;
+  userId: number;
+  displayName: string;
+}
+
+export interface WsErrorPayload {
+  message: string;
+  clientId?: string;
+}
+
+export interface WsRemovedPayload {
+  conversationId: number;
+}

@@ -143,3 +143,7 @@ node-compile-cache/
 .vite/
 .coze-logs
 .codegraph/
+
+# IM 系统产物
+dist-server
+uploads

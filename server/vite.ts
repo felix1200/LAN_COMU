@@ -7,8 +7,9 @@ import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import viteConfig from '../vite.config';
+import { config } from './config';
 
-const isDev = process.env.COZE_PROJECT_ENV !== 'PROD';
+const isDev = config.isDev;
 
 /**
  * 集成 Vite 开发服务器（中间件模式）
@@ -16,6 +17,8 @@ const isDev = process.env.COZE_PROJECT_ENV !== 'PROD';
 export async function setupViteMiddleware(app: Application) {
   const vite = await createViteServer({
     ...viteConfig,
+    // 配置已在此处内联展开，禁止 Vite 再次加载 vite.config.ts，避免插件重复注册导致双重转换
+    configFile: false,
     server: {
       ...viteConfig.server,
       middlewareMode: true,

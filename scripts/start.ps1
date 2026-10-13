@@ -6,6 +6,7 @@ $port = if ($env:DEPLOY_RUN_PORT) { $env:DEPLOY_RUN_PORT } elseif ($env:PORT) { 
 Set-Location $workspace
 
 Write-Host "Starting express production server on port $port..."
+$env:NODE_ENV = "production"
 $env:PORT = "$port"
 & node dist-server/server.js
 exit $LASTEXITCODE

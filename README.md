@@ -1,418 +1,156 @@
-# projects
-
-这是一个基于 Express + Vite + TypeScript + Tailwind CSS 的全栈 Web 应用项目，由扣子编程 CLI 创建。
-
-**核心特性：**
-- 🚀 前端：Vite + TypeScript + Tailwind CSS
-- 🔧 后端：Express + TypeScript，提供 RESTful API
-- 🔥 开发模式：Vite HMR + Express API，单进程启动
-- 📦 生产模式：Express 静态服务 + API，高性能部署
-
-## 快速开始
-
-### 启动开发服务器
-
-```bash
-coze-dev dev
-```
-
-启动后，在浏览器中打开 [http://localhost:5000](http://localhost:5000) 查看应用。
-
-开发服务器支持热更新（HMR），修改代码后页面会自动刷新。
-
-### 构建生产版本
-
-```bash
-coze-dev build
-```
-
-构建产物位于 `dist/` 目录，可直接部署到静态托管服务。
-
-### 预览生产版本
-
-```bash
-coze-dev start
-```
-
-在本地启动一个静态服务器，预览生产构建的效果。
-
-## 项目结构
-
-```
-├── server/                # 后端服务器目录
-│   ├── index.ts          # express 服务器入口
-│   ├── routes/           # API 路由目录
-│   │   └── index.ts      # 路由定义
-│   └── vite.ts           # Vite 集成逻辑
-├── src/                   # 前端源码目录
-│   ├── index.ts          # 前端应用入口（初始化）
-│   ├── main.ts           # 前端主逻辑文件
-│   └── index.css         # 全局样式（包含 Tailwind 指令）
-├── index.html            # HTML 入口文件
-├── vite.config.ts        # Vite 配置
-├── tailwind.config.ts    # Tailwind CSS 配置
-└── tsconfig.json         # TypeScript 配置
-```
-
-**目录说明：**
-
-- **`server/`** - 后端服务器代码
-  - `server.ts` - 服务器主入口，负责创建和启动 Express 应用
-  - `routes/` - API 路由模块，支持按功能拆分路由
-  - `vite.ts` - Vite 开发服务器和静态文件服务集成
-
-- **`src/`** - 前端应用代码
-  - 所有前端相关代码都在这里
-
-**工作原理：**
-
-- **开发模式** (`coze-dev dev`)：
-  - 运行 `server/server.ts` 启动 Express 服务器
-  - Vite 以 middleware 模式集成到 Express
-  - 前端支持 HMR（热模块替换）
-  - 后端 API 和前端在同一进程，端口 5000
-
-- **生产模式** (`coze-dev start`)：
-  - `coze-dev build` 构建前端 → `dist/` 目录
-  - `coze-dev build` 构建后端 → `dist-server/index.js` (CommonJS 格式)
-  - 运行 `dist-server/index.js` 启动生产服务器
-  - Express 服务静态文件 + API 路由
-  - 单一 Node.js 进程，轻量高效
-
-## 核心开发规范
-
-### 1. 后端 API 开发
-
-**添加新的 API 路由**
-
-在 `server/routes/index.ts` 中添加路由：
-
-```typescript
-// GET 请求示例
-router.get('/api/users', (req, res) => {
-  res.json({
-    users: [
-      { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' },
-    ],
-  });
-});
-
-// POST 请求示例
-router.post('/api/users', (req, res) => {
-  const userData = req.body;
-  // 处理业务逻辑
-  res.json({
-    success: true,
-    user: userData,
-  });
-});
-
-// 动态路由参数
-router.get('/api/users/:id', (req, res) => {
-  const userId = req.params.id;
-  res.json({
-    id: userId,
-    name: 'User ' + userId,
-  });
-});
-```
-
-**拆分路由模块**（推荐）
-
-当路由变多时，可以按功能拆分：
-
-```typescript
-// server/routes/users.ts
-import { Router } from 'express';
-
-const router = Router();
-
-router.get('/api/users', (req, res) => {
-  // 用户列表逻辑
-  res.json({ users: [] });
-});
-
-router.post('/api/users', (req, res) => {
-  // 创建用户逻辑
-  res.json({ success: true });
-});
-
-export default router;
-```
-
-然后在 `server/server.ts` 中注册：
-
-```typescript
-import usersRouter from './routes/users';
-
-// 注册路由
-app.use(usersRouter);
-```
-
-**前端调用 API**
-
-```typescript
-// GET 请求
-async function getUsers() {
-  const response = await fetch('/api/users');
-  const data = await response.json();
-  console.log(data);
-}
-
-// POST 请求
-async function createUser(name: string) {
-  const response = await fetch('/api/users', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ name }),
-  });
-  const data = await response.json();
-  console.log(data);
-}
-```
-
-**API 最佳实践**
-
-- ✅ 所有 API 路由以 `/api` 开头，避免与前端路由冲突
-- ✅ 使用 RESTful 设计：GET 查询、POST 创建、PUT 更新、DELETE 删除
-- ✅ 返回统一的响应格式：`{ success: boolean, data?: any, error?: string }`
-- ✅ 添加错误处理和参数验证
-
-### 2. 样式开发
-
-**使用 Tailwind CSS**
-
-本项目使用 Tailwind CSS 进行样式开发，支持亮色/暗色模式自动切换。
-
-```typescript
-// 使用 Tailwind 工具类
-app.innerHTML = `
-  <div class="flex items-center justify-center min-h-screen bg-white dark:bg-black">
-    <h1 class="text-4xl font-bold text-black dark:text-white">
-      Hello World
-    </h1>
-  </div>
-`;
-```
-
-**主题变量**
-
-主题变量定义在 `src/index.css` 中，支持自动适配系统主题：
-
-```css
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-```
-
-**常用 Tailwind 类名**
-
-- 布局：`flex`, `grid`, `container`, `mx-auto`
-- 间距：`p-4`, `m-4`, `gap-4`, `space-x-4`
-- 颜色：`bg-white`, `text-black`, `dark:bg-black`, `dark:text-white`
-- 排版：`text-lg`, `font-bold`, `leading-8`, `tracking-tight`
-- 响应式：`sm:`, `md:`, `lg:`, `xl:`
-
-### 2. 依赖管理
-
-**必须使用 pnpm 管理依赖**
-
-```bash
-# ✅ 安装依赖
-pnpm install
-
-# ✅ 添加新依赖
-pnpm add package-name
-
-# ✅ 添加开发依赖
-pnpm add -D package-name
-
-# ❌ 禁止使用 npm 或 yarn
-# npm install  # 错误！
-# yarn add     # 错误！
-```
-
-项目已配置 `preinstall` 脚本，使用其他包管理器会报错。
-
-### 3. TypeScript 开发
-
-**类型安全**
-
-充分利用 TypeScript 的类型系统，确保代码质量：
-
-```typescript
-// 定义接口
-interface User {
-  id: number;
-  name: string;
-  email: string;
-}
-
-// 使用类型
-function createUser(data: User): void {
-  console.log(`Creating user: ${data.name}`);
-}
-
-// DOM 操作类型推断
-const button = document.querySelector<HTMLButtonElement>('#my-button');
-if (button) {
-  button.addEventListener('click', () => {
-    console.log('Button clicked');
-  });
-}
-```
-
-**避免 any 类型**
-
-尽量避免使用 `any`，使用 `unknown` 或具体类型：
-
-```typescript
-// ❌ 不推荐
-function process(data: any) { }
-
-// ✅ 推荐
-function process(data: unknown) {
-  if (typeof data === 'string') {
-    console.log(data.toUpperCase());
-  }
-}
-```
-
-## 常见开发场景
-
-### 添加新页面
-
-本项目是单页应用（SPA），如需多页面：
-
-1. 在 `src/` 下创建新的 `.ts` 文件
-2. 在 `vite.config.ts` 中配置多入口
-3. 创建对应的 `.html` 文件
-
-### DOM 操作
-
-```typescript
-// 获取元素
-const app = document.getElementById('app');
-const button = document.querySelector<HTMLButtonElement>('.my-button');
-
-// 动态创建元素
-const div = document.createElement('div');
-div.className = 'flex items-center gap-4';
-div.textContent = 'Hello World';
-app?.appendChild(div);
-
-// 事件监听
-button?.addEventListener('click', (e) => {
-  console.log('Clicked', e);
-});
-```
-
-### 数据获取
-
-```typescript
-// Fetch API
-async function fetchData() {
-  try {
-    const response = await fetch('https://api.example.com/data');
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Failed to fetch data:', error);
-  }
-}
-
-// 使用数据
-fetchData().then(data => {
-  console.log(data);
-});
-```
-
-### 环境变量
-
-在 `.env` 文件中定义环境变量（需以 `VITE_` 开头）：
-
-```bash
-VITE_API_URL=https://api.example.com
-```
-
-在代码中使用：
-
-```typescript
-const apiUrl = import.meta.env.VITE_API_URL;
-console.log(apiUrl); // https://api.example.com
-```
+# 内信 IntraChat · 企业内网即时通讯系统
+
+面向公司内网的自建 IM：注册审核、私聊/群聊、WebSocket 实时推送、文件传输、管理员后台。
+**完全自包含**：Node.js + MySQL + 本地磁盘，不依赖任何公有云服务，可离线运行于内网 Windows 服务器。
+
+## 功能清单
+
+| 模块 | 功能 |
+| --- | --- |
+| 账号体系 | 用户注册 → 管理员审核（通过/驳回附原因）→ 登录；禁用/恢复；管理员重置密码；bcrypt 加密存储 |
+| 私聊 | 通讯录发起单聊、在线状态、已读回执、正在输入提示 |
+| 群聊 | 建群、邀请/移除成员、重命名、退群、群主标识 |
+| 实时推送 | WebSocket（`/ws/chat`）消息秒达、在线状态广播、断线自动重连、心跳保活 |
+| 文件传输 | 聊天内上传文件/图片（图片内联预览），鉴权下载，本旁磁盘存储 |
+| 管理后台 | 注册审核、用户管理（禁用/恢复/重置密码/删除）、群聊管理（解散）、数据概览 |
 
 ## 技术栈
 
-**前端：**
-- **构建工具**: Vite 7.x
-- **语言**: TypeScript 5.x
-- **样式**: Tailwind CSS 3.x
+- **前端**：React 19 + Vite 7 + TypeScript + Tailwind CSS（SPA）
+- **后端**：Node.js + Express 4 + `ws`（WebSocket）
+- **数据库**：MySQL 8（兼容 MariaDB 10.4+），`mysql2` 驱动，启动时自动建库建表
+- **认证**：JWT（`jsonwebtoken`）+ `bcrypt` 密码哈希
+- **文件**：`multer` 本旁磁盘存储（默认 `./uploads`）
 
-**后端：**
-- **框架**: Express 4.x
-- **内置中间件**: express.json(), express.urlencoded(), express.static()
+## 目录结构
 
-**工具：**
-- **包管理器**: pnpm 9+
-- **运行时**: Node.js 18+
-- **开发工具**: tsx (TypeScript 执行器)
-
-## 参考文档
-
-**前端：**
-- [Vite 官方文档](https://cn.vitejs.dev/)
-- [TypeScript 官方文档](https://www.typescriptlang.org/zh/docs/)
-- [Tailwind CSS 文档](https://tailwindcss.com/docs)
-
-**后端：**
-- [Express 官方文档](https://expressjs.com/)
-- [Express 中文文档](https://expressjs.com/zh-cn/)
-
-## 重要提示
-
-1. **必须使用 pnpm** 作为包管理器
-2. **使用 TypeScript** 进行类型安全开发，避免使用 `any`
-3. **使用 Tailwind CSS** 进行样式开发，支持响应式和暗色模式
-4. **环境变量必须以 `VITE_` 开头** 才能在客户端代码中访问
-5. **开发时使用 `coze-dev dev`**，支持热更新和快速刷新
-6. **API 路由以 `/api` 开头**，避免与前端路由冲突
-7. **单进程架构**：开发和生产环境都是前后端在同一进程中运行
-
-## 常见问题
-
-**Q: 如何分离前后端端口？**
-
-如果需要前后端分离部署，可以：
-- 前端：使用 `npx vite` 单独启动（默认端口 5173）
-- 后端：修改 `server.ts`，移除 Vite middleware，单独启动
-
-**Q: 如何添加数据库？**
-
-```bash
-# 安装数据库客户端（以 PostgreSQL 为例）
-pnpm add pg
-pnpm add -D @types/pg
-
-# 在 server.ts 中使用
-import { Pool } from 'pg';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+```
+├── server/                 # 后端（TypeScript，开发期 tsx 运行，生产期 tsup 打包）
+│   ├── server.ts           # 入口：HTTP + WS 单端口
+│   ├── config.ts           # 环境变量配置（.env）
+│   ├── db.ts               # MySQL 连接池 + 自动建库建表 + 种子管理员
+│   ├── auth.ts             # JWT 签发/校验、鉴权中间件
+│   ├── hub.ts              # 在线状态与推送注册表
+│   ├── services/           # 消息、会话领域逻辑
+│   ├── routes/             # REST API（auth/users/conversations/files/admin）
+│   └── ws/                 # WebSocket 端点（/ws/chat）与 upgrade 分发
+├── src/                    # 前端 React SPA
+│   ├── pages/              # 登录 / 注册 / 聊天 / 管理后台
+│   ├── components/chat/    # 聊天界面组件
+│   ├── store/              # 认证与聊天状态（WS 客户端）
+│   └── api/                # API 客户端与类型
+├── database/schema.sql     # 建表语句（与 db.ts 自动初始化一致，可手动导入）
+├── scripts/                # 构建/启动脚本（.sh 与 Windows .ps1 双套）
+│   ├── api-smoke.sh        # REST 接口冒烟
+│   └── ws-smoke.mjs        # WebSocket 端到端冒烟
+├── .env.example            # 配置模板
+└── uploads/                # 文件存储目录（运行时自动创建）
 ```
 
-**Q: 如何部署？**
+## 开发环境（本机调试）
 
-1. 运行 `coze-dev build` 构建前后端
-2. 将整个项目上传到服务器
-3. 运行 `pnpm install --prod`
-4. 运行 `coze-dev start` 启动服务
+```bash
+pnpm install
+cp .env.example .env        # 按实际修改数据库连接
+pnpm dev                    # http://localhost:5000（Express + Vite 中间件 + WS 同端口）
+```
+
+## Windows 内网服务器部署（生产）
+
+### 1. 环境准备
+
+1. **Node.js 20+**（建议 LTS）：<https://nodejs.org> 安装后执行：
+   ```powershell
+   corepack enable
+   corepack prepare pnpm@latest --activate
+   ```
+   或 `npm i -g pnpm`。
+2. **MySQL 8**（或 MariaDB 10.4+）：安装后创建一个数据库账号（也可直接用 root）：
+   ```sql
+   CREATE USER 'im_app'@'localhost' IDENTIFIED BY '设置一个强密码';
+   GRANT ALL PRIVILEGES ON `intranet\_im`.* TO 'im_app'@'localhost';
+   FLUSH PRIVILEGES;
+   ```
+   > 应用启动时会自动执行 `CREATE DATABASE IF NOT EXISTS intranet_im` 并建表、种子管理员；
+   > 若账号无建库权限，请手动创建数据库并导入 `database/schema.sql`。
+
+### 2. 配置
+
+复制 `.env.example` 为 `.env`，按实际情况修改：
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `PORT` | 服务监听端口 | `5000` |
+| `DB_HOST` / `DB_PORT` | MySQL 地址/端口 | `127.0.0.1` / `3306` |
+| `DB_USER` / `DB_PASSWORD` / `DB_NAME` | 数据库账号/密码/库名 | - / - / `intranet_im` |
+| `JWT_SECRET` | JWT 签名密钥，**生产必改为长随机串** | 内置开发值（启动会告警） |
+| `TOKEN_TTL_SECONDS` | 登录态有效期（秒） | `43200`（12 小时） |
+| `UPLOAD_DIR` | 文件存储目录（相对项目根或绝对路径） | `uploads` |
+| `MAX_UPLOAD_MB` | 单文件大小上限（MB） | `50` |
+| `ADMIN_USERNAME` / `ADMIN_INITIAL_PASSWORD` | 首次启动种子管理员账号/初始密码 | `admin` / `Admin@123456` |
+
+> 种子管理员仅在数据库中不存在任何 admin 时创建。**首次登录后请立即修改密码。**
+
+### 3. 构建与启动
+
+```powershell
+pnpm install
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1   # 产出 dist/ 与 dist-server/server.js
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1   # NODE_ENV=production 启动
+```
+
+浏览器访问 `http://服务器内网IP:5000`。需在 Windows 防火墙放行该端口（入站规则 → TCP 5000）。
+
+### 4. 常驻运行（二选一）
+
+**pm2（推荐，跨平台）**：
+```powershell
+npm i -g pm2 pm2-windows-startup
+pm2-startup install
+pm2 start dist-server/server.js --name intranet-im --time
+pm2 save
+```
+
+**NSSM（注册为 Windows 服务）**：
+```powershell
+nssm install IntraChatIM "C:\Program Files\nodejs\node.exe" "C:\apps\intranet-im\dist-server\server.js"
+nssm set IntraChatIM AppDirectory "C:\apps\intranet-im"
+nssm set IntraChatIM AppEnvironmentExtra NODE_ENV=production PORT=5000
+nssm start IntraChatIM
+```
+
+### 5. 反向代理（可选）
+
+经 IIS(ARR) / Nginx 代理时，必须放行 WebSocket 升级头，Nginx 示例：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:5000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;   # WS 必需
+    proxy_set_header Connection "upgrade";    # WS 必需
+    proxy_set_header Host $host;
+    client_max_body_size 50m;
+}
+```
+
+### 6. 数据备份
+
+- 数据库：`mysqldump -u im_app -p intranet_im > backup.sql`
+- 文件：直接备份 `uploads/` 目录
+
+## 验证与冒烟
+
+```bash
+bash scripts/api-smoke.sh     # REST 全链路：注册→审核→登录→私聊/群聊→文件→管理后台→权限负例
+node scripts/ws-smoke.mjs     # WS 端到端：双端连接 + 实时投递
+pnpm validate                 # tsc + eslint + stylelint
+```
+
+## 安全说明
+
+- 密码使用 bcrypt（cost 10）哈希存储，永不落明文
+- 全部 API（除注册/登录/健康检查）均需 JWT；文件下载按会话成员关系鉴权
+- 管理接口强制 `admin` 角色；禁用账号即刻强制下线
+- 生产部署务必修改：`JWT_SECRET`、`ADMIN_INITIAL_PASSWORD`、数据库账号密码
+- 如跨楼层/跨楼宇访问，建议按上节加 HTTPS 反向代理
