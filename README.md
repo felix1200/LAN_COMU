@@ -11,8 +11,9 @@
 | 私聊 | 通讯录发起单聊、在线状态、已读回执、正在输入提示 |
 | 群聊 | 建群、邀请/移除成员、重命名、退群、群主标识 |
 | 实时推送 | WebSocket（`/ws/chat`）消息秒达、在线状态广播、断线自动重连、心跳保活 |
-| 文件传输 | 聊天内上传文件/图片（图片内联预览），鉴权下载，本旁磁盘存储 |
-| 管理后台 | 注册审核、用户管理（禁用/恢复/重置密码/删除）、群聊管理（解散）、数据概览 |
+| 文件传输 | 聊天内发送文件（≤100MB，大文件分片直传），仅鉴权下载、不做在线预览，本地磁盘存储 |
+| 个人资料 | 上传/更换/移除头像（≤2MB，jpg/png/webp） |
+| 管理后台 | 仅注册审核 + 用户管理（禁用/恢复/重置密码/删除=标记禁用并保留历史） |
 
 ## 技术栈
 
@@ -84,12 +85,14 @@ pnpm dev                    # http://localhost:5000（Express + Vite 中间件 +
 | `DB_HOST` / `DB_PORT` | MySQL 地址/端口 | `127.0.0.1` / `3306` |
 | `DB_USER` / `DB_PASSWORD` / `DB_NAME` | 数据库账号/密码/库名 | - / - / `intranet_im` |
 | `JWT_SECRET` | JWT 签名密钥，**生产必改为长随机串** | 内置开发值（启动会告警） |
-| `TOKEN_TTL_SECONDS` | 登录态有效期（秒） | `43200`（12 小时） |
+| `TOKEN_TTL_SECONDS` | 登录态有效期（秒），`0` = 永久保持（默认） | `0`（永不超时） |
 | `UPLOAD_DIR` | 文件存储目录（相对项目根或绝对路径） | `uploads` |
-| `MAX_UPLOAD_MB` | 单文件大小上限（MB） | `50` |
+| `MAX_UPLOAD_MB` | 单文件大小上限（MB） | `100` |
+| `LOGIN_MAX_ATTEMPTS` / `LOGIN_LOCK_MINUTES` | 连续登录失败锁定次数 / 锁定分钟 | `5` / `30` |
 | `ADMIN_USERNAME` / `ADMIN_INITIAL_PASSWORD` | 首次启动种子管理员账号/初始密码 | `admin` / `Admin@123456` |
 
-> 种子管理员仅在数据库中不存在任何 admin 时创建。**首次登录后请立即修改密码。**
+> 种子管理员仅在数据库中不存在任何 admin 时创建，且 `must_change_password=1`，**首次登录会被强制要求修改密码**后才能进入系统。
+> 数据库与全部表会在首次启动时自动创建（`CREATE DATABASE IF NOT EXISTS`），无需手动导入；若使用无建库权限的账号，请先手动建库并可选导入 `database/schema.sql`。
 
 ### 3. 构建与启动
 
@@ -130,7 +133,8 @@ location / {
     proxy_set_header Upgrade $http_upgrade;   # WS 必需
     proxy_set_header Connection "upgrade";    # WS 必需
     proxy_set_header Host $host;
-    client_max_body_size 50m;
+    proxy_read_timeout 3600s;                 # 长连接（WS 心跳）不被代理提前断开
+    client_max_body_size 100m;                # 单分片 ≤20MB，按上限放宽即可
 }
 ```
 
