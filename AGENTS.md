@@ -64,7 +64,7 @@
 ## 架构要点（改动前必读）
 
 1. **单端口**：HTTP/API/静态页/WebSocket 全部共用 `PORT`（默认 5000）；WS 端点仅挂 `/ws/*`，由 `server/ws/registry.ts` 按路径分发 upgrade，其余 upgrade 请求直接销毁（保护 Vite HMR）。
-2. **WS 协议**：帧格式 `{ type, payload }`；客户端连接 `ws://host/ws/chat?token=<JWT>`；服务端鉴权完成后下发 `ready` 帧（客户端必须等 ready 再发消息）；30s 心跳。
+2. **WS 协议**：帧格式 `{ type, payload }`；客户端连接 `ws://host/ws/chat`（token **不走 query**，因代理会剥掉 upgrade 查询参数），改为**首帧鉴权**——连接建立后客户端先发 `{ type:'auth', payload:{ token } }`，服务端校验通过后下发 `ready` 帧（客户端必须等 ready 再发业务消息，未鉴权期间仅接受 auth/ping）；30s 心跳。
 3. **REST 与 WS 共用领域逻辑**：消息创建/已读等都在 `server/services/`，REST 仅是 WS 的降级通道；两边写数据后都通过 `hub.ts` 推送。
 4. **会话 DTO 按视角生成**：`services/conversations.ts` 的 DTO 依请求用户计算标题/未读（私聊标题=对方姓名），给不同成员推送时需分别生成。
 5. **文件鉴权**：下载要求上传者本人，或文件所在会话的成员；前端一律 `fetch`+`blob` 下载/预览（禁止裸 `<a download>`）。

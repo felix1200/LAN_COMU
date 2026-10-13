@@ -29,9 +29,12 @@ export function createChatConnection(opts: WsOptions): WsConnection {
       return;
     }
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${location.host}/ws/chat?token=${encodeURIComponent(token)}`);
+    // token 走首条 auth 帧，不放进 URL：代理可能剥掉 upgrade 的查询参数导致鉴权失败
+    ws = new WebSocket(`${protocol}//${location.host}/ws/chat`);
 
     ws.onopen = () => {
+      // 首帧鉴权
+      ws?.send(JSON.stringify({ type: 'auth', payload: { token } }));
       heartbeatTimer = setInterval(() => {
         ws?.send(JSON.stringify({ type: 'ping', payload: null }));
       }, heartbeatMs);

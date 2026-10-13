@@ -91,8 +91,11 @@ async function main() {
 
   // 5. WS 双端连接，A 发消息，B 应实时收到
   const received = [];
-  const wsA = new WebSocket(`${WS_BASE}/ws/chat?token=${a.token}`);
-  const wsB = new WebSocket(`${WS_BASE}/ws/chat?token=${b.token}`);
+  const wsA = new WebSocket(`${WS_BASE}/ws/chat`);
+  const wsB = new WebSocket(`${WS_BASE}/ws/chat`);
+  // 首帧鉴权：token 走 auth 帧（与前端一致，不依赖 ?token= 查询参数）
+  wsA.on('open', () => wsA.send(JSON.stringify({ type: 'auth', payload: { token: a.token } })));
+  wsB.on('open', () => wsB.send(JSON.stringify({ type: 'auth', payload: { token: b.token } })));
   wsB.on('message', (raw) => {
     const msg = JSON.parse(raw.toString());
     if (msg.type === 'message:new') {

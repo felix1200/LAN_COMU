@@ -1,6 +1,5 @@
 // ABOUTME: /ws/chat 实时通讯端点：鉴权连接、在线状态、消息收发、已读与输入状态
 
-import type { IncomingMessage } from 'http';
 import { WebSocket } from 'ws';
 import { loadAuthUser, verifyToken, type AuthUser } from '../auth';
 import {
@@ -102,81 +101,119 @@ async function handleClientMessage(user: AuthUser, ws: WebSocket, msg: WsMessage
   }
 }
 
+/** 发送鉴权失败并关闭连接 */
+function rejectUnauthorized(ws: WebSocket, reason = 'unauthorized'): void {
+  send(ws, { type: 'error', payload: { message: '鉴权失败' } });
+  try {
+    ws.close(4001, reason);
+  } catch {
+    // 忽略
+  }
+}
+
 export function setupChatEndpoint(): void {
   const wss = createEndpoint('/ws/chat');
 
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    void (async () => {
-      // 1) 连接级鉴权：token 走 query 参数
-      const url = new URL(req.url ?? '/', 'http://localhost');
-      const token = url.searchParams.get('token') ?? '';
-      const payload = token ? verifyToken(token) : null;
-      const user = payload ? await loadAuthUser(payload.sub) : null;
+  wss.on('connection', (ws: WebSocket) => {
+    // 连接级鉴权改为「首帧鉴权」：token 通过首条 { type: 'auth' } 消息携带，
+    // 不依赖 query string —— 部署代理（内网/预览域名）可能剥掉 upgrade 请求的查询参数，
+    // 导致 ?token= 丢失后服务端一律鉴权失败（浏览器端也无法为 WS 设置自定义请求头）。
+    let user: AuthUser | null = null;
+    let alive = true;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+    const authTimer = setTimeout(() => {
       if (!user) {
-        send(ws, { type: 'error', payload: { message: '鉴权失败' } });
-        ws.close(4001, 'unauthorized');
-        return;
+        send(ws, { type: 'error', payload: { message: '鉴权超时' } });
+        try {
+          ws.close(4001, 'auth timeout');
+        } catch {
+          // 忽略
+        }
       }
+    }, 8000);
 
-      // 2) 上线
-      const becameOnline = addSocket(user.id, ws);
-      if (becameOnline) {
-        broadcastAll({ type: 'presence', payload: { userId: user.id, online: true } });
-      }
-      send(ws, { type: 'ready', payload: { userId: user.id, onlineUserIds: onlineUserIds() } });
-
-      // 3) 心跳：30s 无响应则断开
-      let alive = true;
-      const heartbeat = setInterval(() => {
-        if (!alive) {
-          ws.terminate();
+    ws.on('message', (raw: Buffer) => {
+      void (async () => {
+        let msg: WsMessage;
+        try {
+          msg = JSON.parse(raw.toString()) as WsMessage;
+        } catch {
+          send(ws, { type: 'error', payload: { message: '消息格式错误' } });
           return;
         }
-        alive = false;
-        ws.ping();
-      }, 30000);
-      ws.on('pong', () => {
-        alive = true;
-      });
 
-      // 4) 业务消息
-      ws.on('message', (raw: Buffer) => {
-        void (async () => {
-          let msg: WsMessage;
-          try {
-            msg = JSON.parse(raw.toString()) as WsMessage;
-          } catch {
-            send(ws, { type: 'error', payload: { message: '消息格式错误' } });
+        // —— 尚未鉴权：仅接受 auth 帧（ping 心跳不打断）——
+        if (!user) {
+          if (msg.type === 'auth') {
+            const token = String(((msg.payload ?? {}) as { token?: unknown }).token ?? '');
+            const payload = token ? verifyToken(token) : null;
+            const authed = payload ? await loadAuthUser(payload.sub) : null;
+            if (!authed) {
+              rejectUnauthorized(ws);
+              return;
+            }
+            user = authed;
+            clearTimeout(authTimer);
+
+            // 上线
+            const becameOnline = addSocket(user.id, ws);
+            if (becameOnline) {
+              broadcastAll({ type: 'presence', payload: { userId: user.id, online: true } });
+            }
+            send(ws, {
+              type: 'ready',
+              payload: { userId: user.id, onlineUserIds: onlineUserIds() },
+            });
+
+            // 心跳：30s 无响应则断开
+            heartbeat = setInterval(() => {
+              if (!alive) {
+                ws.terminate();
+                return;
+              }
+              alive = false;
+              ws.ping();
+            }, 30000);
+            ws.on('pong', () => {
+              alive = true;
+            });
             return;
           }
-          try {
-            await handleClientMessage(user, ws, msg);
-          } catch (err) {
-            console.error('[ws] 处理消息异常：', err);
-            send(ws, { type: 'error', payload: { message: '服务器内部错误' } });
+          if (msg.type === 'ping') {
+            send(ws, { type: 'pong', payload: null });
+          } else {
+            send(ws, { type: 'error', payload: { message: '连接尚未鉴权' } });
           }
-        })();
-      });
+          return;
+        }
 
-      // 5) 下线
-      ws.on('close', () => {
+        // —— 已鉴权：业务分发 ——
+        try {
+          await handleClientMessage(user, ws, msg);
+        } catch (err) {
+          console.error('[ws] 处理消息异常：', err);
+          send(ws, { type: 'error', payload: { message: '服务器内部错误' } });
+        }
+      })();
+    });
+
+    // 下线
+    ws.on('close', () => {
+      clearTimeout(authTimer);
+      if (heartbeat) {
         clearInterval(heartbeat);
+      }
+      if (user) {
         const becameOffline = removeSocket(user.id, ws);
         if (becameOffline) {
           broadcastAll({ type: 'presence', payload: { userId: user.id, online: false } });
         }
-      });
-
-      ws.on('error', () => {
-        // 异常统一交给 close 处理
-      });
-    })().catch((err) => {
-      console.error('[ws] 连接初始化失败：', err);
-      try {
-        ws.close(1011, 'internal error');
-      } catch {
-        // 忽略
       }
+    });
+
+    ws.on('error', () => {
+      // 异常统一交给 close 处理
     });
   });
 }
