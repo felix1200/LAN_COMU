@@ -10,6 +10,34 @@ export interface AuthUser {
   username: string;
   displayName: string;
   role: 'admin' | 'member';
+  avatarId: number | null;
+}
+
+// 登录失败锁定（进程内，单实例部署适用）：连续失败 N 次后锁定 M 分钟
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
+export function loginLockRemaining(username: string): number {
+  const rec = loginAttempts.get(username);
+  if (!rec || !(rec.lockedUntil > Date.now())) {
+    return 0;
+  }
+  return Math.ceil((rec.lockedUntil - Date.now()) / 1000);
+}
+
+export function recordLoginFailure(username: string): boolean {
+  const rec = loginAttempts.get(username) ?? { count: 0, lockedUntil: 0 };
+  const maxAttempts = config.login.maxAttempts;
+  rec.count += 1;
+  if (rec.count >= maxAttempts) {
+    rec.lockedUntil = Date.now() + config.login.lockMinutes * 60 * 1000;
+    rec.count = 0;
+  }
+  loginAttempts.set(username, rec);
+  return rec.lockedUntil > 0;
+}
+
+export function resetLoginFailures(username: string): void {
+  loginAttempts.delete(username);
 }
 
 declare global {
@@ -28,9 +56,8 @@ interface TokenPayload {
 }
 
 export function signToken(user: { id: number; username: string; role: string }): string {
-  return jwt.sign({ sub: user.id, username: user.username, role: user.role }, config.jwtSecret, {
-    expiresIn: config.tokenTtlSeconds,
-  });
+  // 需求基线：永久保持登录，不设置过期时间（账号禁用由请求态校验拦截）
+  return jwt.sign({ sub: user.id, username: user.username, role: user.role }, config.jwtSecret);
 }
 
 export function verifyToken(token: string): TokenPayload | null {
@@ -51,18 +78,25 @@ interface DbUserStatusRow {
   displayName: string;
   role: 'admin' | 'member';
   status: string;
+  avatarId: number | null;
 }
 
 /** 加载已通过审核的用户；未通过/被禁用/不存在返回 null */
 export async function loadAuthUser(userId: number): Promise<AuthUser | null> {
   const row = await queryOne<DbUserStatusRow>(
-    'SELECT id, username, display_name AS displayName, role, status FROM users WHERE id = ?',
+    'SELECT id, username, display_name AS displayName, role, status, avatar AS avatarId FROM users WHERE id = ?',
     [userId],
   );
   if (!row || row.status !== 'approved') {
     return null;
   }
-  return { id: Number(row.id), username: row.username, displayName: row.displayName, role: row.role };
+  return {
+    id: Number(row.id),
+    username: row.username,
+    displayName: row.displayName,
+    role: row.role,
+    avatarId: row.avatarId != null ? Number(row.avatarId) : null,
+  };
 }
 
 export const authRequired: RequestHandler = (req: Request, res: Response, next: NextFunction) => {

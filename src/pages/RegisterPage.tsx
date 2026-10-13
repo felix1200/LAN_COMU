@@ -9,7 +9,6 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState<string | null>(null);
@@ -20,10 +19,6 @@ export default function RegisterPage() {
       return;
     }
     setError(null);
-    if (password !== confirm) {
-      setError('两次输入的密码不一致');
-      return;
-    }
     setSubmitting(true);
     try {
       const message = await register(username.trim(), displayName.trim(), password);
@@ -85,7 +80,7 @@ export default function RegisterPage() {
             required
             className="w-full rounded-md border border-line bg-white px-3 py-2.5 text-[14px] outline-none transition-colors duration-100 focus:border-signal"
           />
-          <p className="mt-1 text-[12px] text-sub">3-32 位字母、数字或下划线，用于登录</p>
+          <p className="mt-1 text-[12px] text-sub">3-20 位字母、数字或下划线，用于登录</p>
         </div>
 
         <div>
@@ -116,22 +111,7 @@ export default function RegisterPage() {
             required
             className="w-full rounded-md border border-line bg-white px-3 py-2.5 text-[14px] outline-none transition-colors duration-100 focus:border-signal"
           />
-          <p className="mt-1 text-[12px] text-sub">至少 8 位</p>
-        </div>
-
-        <div>
-          <label htmlFor="reg-confirm" className="mb-1.5 block text-[13px] text-sub">
-            确认密码
-          </label>
-          <input
-            id="reg-confirm"
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-            required
-            className="w-full rounded-md border border-line bg-white px-3 py-2.5 text-[14px] outline-none transition-colors duration-100 focus:border-signal"
-          />
+          <p className="mt-1 text-[12px] text-sub">至少 6 位</p>
         </div>
 
         <button

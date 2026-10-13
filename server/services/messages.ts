@@ -4,7 +4,7 @@ import type { AuthUser } from '../auth';
 import { execute, query, queryOne } from '../db';
 import { HttpError, toISO } from '../util';
 
-export type MessageType = 'text' | 'image' | 'file';
+export type MessageType = 'text' | 'file'; // 需求基线：消息仅文字 / 文件
 
 export interface FileRef {
   id: number;
@@ -98,12 +98,13 @@ export async function createMessage(
   if (type === 'text' && !trimmed) {
     throw new HttpError(400, '消息内容不能为空');
   }
-  if (trimmed.length > 4000) {
-    throw new HttpError(400, '消息内容过长（最多 4000 字）');
+  // 需求基线：文字消息 ≤ 2000 字
+  if (trimmed.length > 2000) {
+    throw new HttpError(400, '消息内容过长（最多 2000 字）');
   }
 
   let fileRef: number | null = null;
-  if (type === 'image' || type === 'file') {
+  if (type === 'file') {
     if (!fileId) {
       throw new HttpError(400, '缺少附件');
     }
@@ -151,4 +152,65 @@ export async function markRead(conversationId: number, userId: number): Promise<
     'UPDATE conversation_members SET last_read_at = NOW(3) WHERE conversation_id = ? AND user_id = ?',
     [conversationId, userId],
   );
+}
+
+export interface MessageSearchHit extends MessageDTO {
+  conversationTitle: string;
+}
+
+/** 全部历史会话文字检索（仅本用户参与的会话），按时间倒序分页 */
+export async function searchMessages(
+  userId: number,
+  keyword: string,
+  limit: number,
+  beforeId?: number,
+): Promise<{ results: MessageSearchHit[]; hasMore: boolean }> {
+  const escaped = keyword.replace(/[\\%_]/g, '\\$&');
+  const like = `%${escaped}%`;
+  const params: (string | number)[] = [userId, like];
+  let cursor = '';
+  if (beforeId) {
+    cursor = 'AND m.id < ?';
+    params.push(beforeId);
+  }
+  const sql = `
+    ${MESSAGE_SELECT}
+    JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = ?
+    WHERE m.type = 'text' AND m.content LIKE ?
+    ${cursor}
+    ORDER BY m.id DESC
+    LIMIT ?
+  `;
+  params.push(limit + 1);
+  const rows = await query<MessageRow>(sql, params);
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+
+  const results: MessageSearchHit[] = [];
+  for (const row of page) {
+    results.push({ ...rowToMessage(row), conversationTitle: '' });
+  }
+  if (results.length === 0) {
+    return { results: [], hasMore: false };
+  }
+
+  // 补充会话展示标题（群=群名；私聊=对方真实姓名）
+  const convIds = [...new Set(results.map((r) => r.conversationId))];
+  const titles = await query<{ conversationId: number; title: string }>(
+    `SELECT c.id AS conversationId,
+            CASE
+              WHEN c.type = 'group' THEN COALESCE(c.name, '群聊')
+              ELSE (SELECT u.display_name FROM conversation_members me
+                    JOIN users u ON u.id = me.user_id
+                    WHERE me.conversation_id = c.id AND me.user_id <> ? LIMIT 1)
+            END AS title
+     FROM conversations c
+     WHERE c.id IN (${convIds.map(() => '?').join(',')})`,
+    [userId, ...convIds],
+  );
+  const titleMap = new Map(titles.map((t) => [Number(t.conversationId), t.title]));
+  for (const r of results) {
+    r.conversationTitle = titleMap.get(r.conversationId) ?? '会话';
+  }
+  return { results, hasMore };
 }

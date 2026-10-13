@@ -14,6 +14,7 @@ import { api, getToken } from '../api/client';
 import type {
   Conversation,
   FileRef,
+  Member,
   Message,
   MessageType,
   User,
@@ -66,6 +67,8 @@ interface ChatContextValue {
   sending: boolean;
   typingEntries: TypingEntry[];
   peerReadAt: string | null;
+  /** 当前会话成员（含各自 lastReadAt/avatarId），用于群聊 X/Y 已读统计 */
+  activeMembers: Member[];
   openConversation: (id: number) => Promise<void>;
   clearActive: () => void;
   loadMore: () => Promise<void>;
@@ -105,6 +108,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [sending, setSending] = useState(false);
   const [typingByConv, setTypingByConv] = useState<Record<number, TypingEntry[]>>({});
   const [peerReadByConv, setPeerReadByConv] = useState<Record<number, string>>({});
+  const [activeMembers, setActiveMembers] = useState<Member[]>([]);
 
   const wsRef = useRef<WsConnection | null>(null);
   const activeIdRef = useRef<number | null>(null);
@@ -128,6 +132,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const refreshContacts = useCallback(async () => {
     const res = await api<{ users: User[] }>('/api/users');
     setContacts(res.users);
+  }, []);
+
+  /** 刷新当前会话成员（含 lastReadAt），群聊用于 X/Y 已读统计 */
+  const refreshActiveMembers = useCallback(async (conversationId: number) => {
+    const res = await api<{ members: Member[] }>(`/api/conversations/${conversationId}/members`);
+    setActiveMembers(res.members);
   }, []);
 
   const markRead = useCallback((conversationId: number) => {
@@ -274,11 +284,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
         case 'read:update': {
           const payload = msg.payload as WsReadPayload;
-          if (payload.userId !== myIdRef.current) {
-            setPeerReadByConv((prev) => ({
-              ...prev,
-              [payload.conversationId]: new Date().toISOString(),
-            }));
+          if (payload.userId === myIdRef.current) {
+            break;
+          }
+          if (activeIdRef.current === payload.conversationId) {
+            // 群聊 read:update 需刷新成员已读位置；私聊直接更新已读时间
+            const active = conversations.find((c) => c.id === payload.conversationId);
+            if (active?.type === 'group') {
+              void refreshActiveMembers(payload.conversationId).catch(() => undefined);
+            } else {
+              setPeerReadByConv((prev) => ({
+                ...prev,
+                [payload.conversationId]: new Date().toISOString(),
+              }));
+            }
           }
           break;
         }
@@ -332,7 +351,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           break;
       }
     },
-    [handleAck, handleIncomingMessage, logout, refreshConversations, setActive, upsertConversation],
+    [handleAck, handleIncomingMessage, logout, refreshActiveMembers, refreshConversations, setActive, upsertConversation],
   );
 
   // ---- 连接生命周期 ----
@@ -362,6 +381,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const openConversation = useCallback(
     async (id: number) => {
       setActive(id);
+      setActiveMembers([]);
+      const target = conversations.find((c) => c.id === id);
+      if (target?.type === 'group') {
+        void refreshActiveMembers(id).catch(() => undefined);
+      }
       setMessagesByConv((prev) => {
         if (prev[id]?.loaded) {
           return prev;
@@ -388,11 +412,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       markRead(id);
     },
-    [markRead, messagesByConv, setActive],
+    [markRead, messagesByConv, refreshActiveMembers, setActive],
   );
 
   const clearActive = useCallback(() => {
     setActive(null);
+    setActiveMembers([]);
   }, [setActive]);
 
   const loadMore = useCallback(async () => {
@@ -539,6 +564,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sending,
     typingEntries,
     peerReadAt: activeId !== null ? peerReadByConv[activeId] ?? null : null,
+    activeMembers,
     openConversation,
     clearActive,
     loadMore,

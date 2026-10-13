@@ -1,27 +1,25 @@
 import {
   ArrowLeft,
-  BarChart3,
   Check,
   Inbox,
   KeyRound,
   Loader2,
   RefreshCw,
   Search,
-  ShieldCheck,
   Users,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AdminGroup, AdminStats, AdminUser, UserStatus } from '../api/types';
+import type { AdminUser, UserStatus } from '../api/types';
 import Avatar from '../components/Avatar';
 import Modal from '../components/Modal';
-import { formatBytes, formatFullTime } from '../lib/format';
+import { formatFullTime } from '../lib/format';
 import { toast } from '../lib/toast';
 import { useAuth } from '../store/auth';
 
-type AdminTab = 'review' | 'users' | 'groups' | 'stats';
+type AdminTab = 'review' | 'users';
 
 const STATUS_META: Record<UserStatus, { label: string; cls: string }> = {
   pending: { label: '待审核', cls: 'border-amber/40 bg-amber-soft text-amber' },
@@ -34,51 +32,6 @@ function StatusBadge({ status }: { status: UserStatus }) {
   const meta = STATUS_META[status];
   return (
     <span className={`inline-block rounded-sm border px-1.5 py-0.5 text-[11px] ${meta.cls}`}>{meta.label}</span>
-  );
-}
-
-function ConfirmDialog({
-  title,
-  description,
-  confirmText,
-  onConfirm,
-  onClose,
-}: {
-  title: string;
-  description: string;
-  confirmText: string;
-  onConfirm: () => Promise<void>;
-  onClose: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal title={title} onClose={onClose} width={400}>
-      <p className="text-[13px] leading-6 text-sub">{description}</p>
-      <div className="mt-5 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-line px-3.5 py-2 text-[13px] text-sub transition-colors duration-100 hover:text-main"
-        >
-          取消
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            onConfirm()
-              .then(onClose)
-              .catch((err: unknown) => toast(err instanceof Error ? err.message : '操作失败', 'error'))
-              .finally(() => setBusy(false));
-          }}
-          className="flex items-center gap-1.5 rounded-md bg-danger px-3.5 py-2 text-[13px] font-medium text-white transition-colors duration-100 hover:opacity-90 disabled:opacity-60"
-        >
-          {busy && <Loader2 size={13} className="animate-spin" />}
-          {confirmText}
-        </button>
-      </div>
-    </Modal>
   );
 }
 
@@ -110,7 +63,7 @@ function ActionButton({
 const TH = 'px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider text-sub';
 const TD = 'px-3 py-2.5 text-[13px] text-main';
 
-/** 审核面板 */
+/** 注册审核面板 */
 function ReviewPanel({ onChanged }: { onChanged: () => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,7 +151,7 @@ function ReviewPanel({ onChanged }: { onChanged: () => void }) {
             <tr key={u.id} className="border-b border-line/60 transition-colors duration-100 hover:bg-paper-deep/40">
               <td className={TD}>
                 <div className="flex items-center gap-2.5">
-                  <Avatar id={u.id} name={u.displayName} size={28} />
+                  <Avatar id={u.id} name={u.displayName} size={28} avatarId={u.avatarId} />
                   <span className="font-medium">{u.displayName}</span>
                 </div>
               </td>
@@ -269,7 +222,7 @@ function ReviewPanel({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** 用户管理面板 */
+/** 用户管理面板（删除账号 = 标记禁用，保留历史聊天记录） */
 function UsersPanel({ onChanged }: { onChanged: () => void }) {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -278,7 +231,6 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
   const [keyword, setKeyword] = useState('');
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -385,7 +337,7 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
               <tr key={u.id} className="border-b border-line/60 transition-colors duration-100 hover:bg-paper-deep/40">
                 <td className={TD}>
                   <div className="flex items-center gap-2.5">
-                    <Avatar id={u.id} name={u.displayName} size={28} />
+                    <Avatar id={u.id} name={u.displayName} size={28} avatarId={u.avatarId} />
                     <div>
                       <div className="font-medium leading-4">{u.displayName}</div>
                       <div className="mt-0.5 font-mono text-[11px] text-sub">@{u.username}</div>
@@ -425,8 +377,8 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
                         <Check size={14} />
                       </ActionButton>
                     )}
-                    {u.status === 'approved' && u.role !== 'admin' && (
-                      <ActionButton title="禁用账号" danger onClick={() => void call('disable', u, '已禁用该账号')}>
+                    {u.status === 'approved' && u.role !== 'admin' && u.id !== me?.id && (
+                      <ActionButton title="禁用账号" danger onClick={() => void call('disable', u, '已禁用该账号（保留历史）')}>
                         <X size={14} />
                       </ActionButton>
                     )}
@@ -444,11 +396,6 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
                     >
                       <KeyRound size={13} />
                     </ActionButton>
-                    {(u.status === 'pending' || u.status === 'rejected') && u.id !== me?.id && (
-                      <ActionButton title="删除申请记录" danger onClick={() => setDeleteTarget(u)}>
-                        <X size={14} />
-                      </ActionButton>
-                    )}
                   </div>
                 </td>
               </tr>
@@ -460,7 +407,7 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
       {resetTarget && (
         <Modal title={`重置「${resetTarget.displayName}」的密码`} onClose={() => setResetTarget(null)} width={400}>
           <label htmlFor="reset-pwd" className="mb-1.5 block text-[13px] text-sub">
-            新密码（至少 8 位）
+            新密码（6-72 位）
           </label>
           <input
             id="reset-pwd"
@@ -480,7 +427,7 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
             </button>
             <button
               type="button"
-              disabled={newPassword.length < 8}
+              disabled={newPassword.length < 6}
               onClick={() => void resetPassword()}
               className="rounded-md bg-signal px-3.5 py-2 text-[13px] font-medium text-white hover:bg-signal-deep disabled:opacity-50"
             >
@@ -489,128 +436,6 @@ function UsersPanel({ onChanged }: { onChanged: () => void }) {
           </div>
         </Modal>
       )}
-
-      {deleteTarget && (
-        <ConfirmDialog
-          title="删除注册记录"
-          description={`确定删除「${deleteTarget.displayName}（@${deleteTarget.username}）」的注册记录吗？删除后该用户名可重新注册。`}
-          confirmText="确认删除"
-          onClose={() => setDeleteTarget(null)}
-          onConfirm={async () => {
-            await api(`/api/admin/users/${deleteTarget.id}`, { method: 'DELETE' });
-            toast('已删除', 'success');
-            await load();
-            onChanged();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/** 群聊管理面板 */
-function GroupsPanel() {
-  const [groups, setGroups] = useState<AdminGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dissolveTarget, setDissolveTarget] = useState<AdminGroup | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await api<{ groups: AdminGroup[] }>('/api/admin/groups');
-      setGroups(res.groups);
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '加载失败', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-sub" /></div>;
-  }
-
-  return (
-    <>
-      {groups.length === 0 ? (
-        <div className="py-16 text-center text-[13px] text-sub">还没有群聊</div>
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-line">
-              <th className={TH}>群名称</th>
-              <th className={TH}>群主</th>
-              <th className={TH}>成员数</th>
-              <th className={TH}>消息数</th>
-              <th className={TH}>创建时间</th>
-              <th className={`${TH} text-right`}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.id} className="border-b border-line/60 transition-colors duration-100 hover:bg-paper-deep/40">
-                <td className={`${TD} font-medium`}>{g.name}</td>
-                <td className={`${TD} text-sub`}>{g.creatorName ?? '-'}</td>
-                <td className={`${TD} font-mono text-[12px]`}>{g.memberCount}</td>
-                <td className={`${TD} font-mono text-[12px]`}>{g.messageCount}</td>
-                <td className={`${TD} font-mono text-[11px] text-sub`}>{formatFullTime(g.createdAt)}</td>
-                <td className={`${TD} text-right`}>
-                  <button
-                    type="button"
-                    onClick={() => setDissolveTarget(g)}
-                    className="rounded-md border border-danger/40 px-2.5 py-1.5 text-[12px] text-danger transition-colors duration-100 hover:bg-danger-soft"
-                  >
-                    解散
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {dissolveTarget && (
-        <ConfirmDialog
-          title="解散群聊"
-          description={`确定解散群聊「${dissolveTarget.name}」吗？群内 ${dissolveTarget.messageCount} 条消息将一并删除，该操作不可恢复。`}
-          confirmText="确认解散"
-          onClose={() => setDissolveTarget(null)}
-          onConfirm={async () => {
-            await api(`/api/admin/groups/${dissolveTarget.id}`, { method: 'DELETE' });
-            toast('群聊已解散', 'success');
-            await load();
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-/** 数据概览面板 */
-function StatsPanel({ stats, loading }: { stats: AdminStats | null; loading: boolean }) {
-  if (loading || !stats) {
-    return <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-sub" /></div>;
-  }
-  const cards: { label: string; value: string; sub?: string }[] = [
-    { label: '注册用户', value: String(stats.users.total), sub: `正常 ${stats.users.approved}` },
-    { label: '待审核', value: String(stats.users.pending), sub: `已驳回 ${stats.users.rejected} / 已禁用 ${stats.users.disabled}` },
-    { label: '当前在线', value: String(stats.online), sub: '实时连接数' },
-    { label: '群聊 / 私聊', value: `${stats.conversations.group} / ${stats.conversations.direct}` },
-    { label: '消息总数', value: String(stats.messages.total), sub: `今日 ${stats.messages.today}` },
-    { label: '文件', value: String(stats.files.count), sub: formatBytes(stats.files.bytes) },
-  ];
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      {cards.map((card) => (
-        <div key={card.label} className="rounded-md border border-line bg-white px-4 py-3.5">
-          <div className="text-[11px] uppercase tracking-wider text-sub">{card.label}</div>
-          <div className="mt-1.5 font-mono text-[24px] font-medium leading-none text-main">{card.value}</div>
-          {card.sub && <div className="mt-1.5 text-[11px] text-sub">{card.sub}</div>}
-        </div>
-      ))}
     </div>
   );
 }
@@ -618,33 +443,28 @@ function StatsPanel({ stats, loading }: { stats: AdminStats | null; loading: boo
 export default function AdminPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<AdminTab>('review');
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
 
-  const loadStats = useCallback(async () => {
+  const loadPending = useCallback(async () => {
     try {
-      const res = await api<{ stats: AdminStats }>('/api/admin/stats');
-      setStats(res.stats);
+      const res = await api<{ users: AdminUser[] }>('/api/admin/users?status=pending');
+      setPendingCount(res.users.length);
     } catch {
-      // 概览失败不阻断其他功能
-    } finally {
-      setStatsLoading(false);
+      // 忽略
     }
   }, []);
 
   useEffect(() => {
-    void loadStats();
-  }, [loadStats]);
+    void loadPending();
+  }, [loadPending]);
 
   if (!user || user.role !== 'admin') {
     return null;
   }
 
   const tabs: { key: AdminTab; label: string; icon: ReactNode; badge?: number }[] = [
-    { key: 'review', label: '注册审核', icon: <Inbox size={15} strokeWidth={1.75} />, badge: stats?.users.pending },
+    { key: 'review', label: '注册审核', icon: <Inbox size={15} strokeWidth={1.75} />, badge: pendingCount },
     { key: 'users', label: '用户管理', icon: <Users size={15} strokeWidth={1.75} /> },
-    { key: 'groups', label: '群聊管理', icon: <ShieldCheck size={15} strokeWidth={1.75} /> },
-    { key: 'stats', label: '数据概览', icon: <BarChart3 size={15} strokeWidth={1.75} /> },
   ];
 
   return (
@@ -665,7 +485,7 @@ export default function AdminPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 text-[13px] text-sub">
-          <Avatar id={user.id} name={user.displayName} size={26} />
+          <Avatar id={user.id} name={user.displayName} size={26} avatarId={user.avatarId} />
           {user.displayName}
         </div>
       </header>
@@ -698,10 +518,8 @@ export default function AdminPage() {
       {/* 内容 */}
       <main className="flex-1 overflow-y-auto p-5">
         <div className="mx-auto max-w-5xl rounded-md border border-line bg-white p-5">
-          {tab === 'review' && <ReviewPanel onChanged={() => void loadStats()} />}
-          {tab === 'users' && <UsersPanel onChanged={() => void loadStats()} />}
-          {tab === 'groups' && <GroupsPanel />}
-          {tab === 'stats' && <StatsPanel stats={stats} loading={statsLoading} />}
+          {tab === 'review' && <ReviewPanel onChanged={() => void loadPending()} />}
+          {tab === 'users' && <UsersPanel onChanged={() => void loadPending()} />}
         </div>
       </main>
     </div>

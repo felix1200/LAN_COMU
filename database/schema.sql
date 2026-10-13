@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   role          VARCHAR(16)  NOT NULL DEFAULT 'member' COMMENT 'admin | member',
   status        VARCHAR(16)  NOT NULL DEFAULT 'pending' COMMENT 'pending | approved | rejected | disabled',
   reject_reason VARCHAR(255) DEFAULT NULL,
+  avatar        BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '头像文件ID，关联 files.id',
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   reviewed_at   TIMESTAMP    NULL DEFAULT NULL,
   reviewed_by   BIGINT UNSIGNED DEFAULT NULL,

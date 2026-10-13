@@ -2,7 +2,7 @@
 
 export type Role = 'admin' | 'member';
 export type UserStatus = 'pending' | 'approved' | 'rejected' | 'disabled';
-export type MessageType = 'text' | 'image' | 'file';
+export type MessageType = 'text' | 'file';
 export type ConversationType = 'direct' | 'group';
 
 export interface User {
@@ -10,6 +10,7 @@ export interface User {
   username: string;
   displayName: string;
   role: Role;
+  avatarId?: number | null;
 }
 
 export interface FileRef {
@@ -34,6 +35,7 @@ export interface OtherUser {
   id: number;
   username: string;
   displayName: string;
+  avatarId?: number | null;
 }
 
 export interface Conversation {
@@ -53,6 +55,7 @@ export interface Member {
   id: number;
   username: string;
   displayName: string;
+  avatarId: number | null;
   isCreator: boolean;
   joinedAt: string;
   lastReadAt: string;
@@ -64,24 +67,27 @@ export interface AdminUser {
   displayName: string;
   role: Role;
   status: UserStatus;
+  avatarId: number | null;
   rejectReason: string | null;
   createdAt: string;
   reviewedAt: string | null;
   reviewerName: string | null;
 }
 
-export interface AdminGroup {
-  id: number;
-  name: string;
-  creatorName: string;
-  memberCount: number;
-  messageCount: number;
-  createdAt: string;
+export interface MessageSearchHit {
+  conversationId: number;
+  conversationTitle: string;
+  message: Message;
+}
+
+export interface MessageSearchResult {
+  results: MessageSearchHit[];
+  hasMore: boolean;
 }
 
 export interface AdminStats {
   users: { total: number; pending: number; approved: number; rejected: number; disabled: number };
-  conversations: { group: number; direct: number };
+  conversations: { group: number };
   messages: { total: number; today: number };
   files: { count: number; bytes: number };
   online: number;

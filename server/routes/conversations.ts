@@ -13,12 +13,12 @@ import {
   notifyMembersChanged,
   pushConversationToMembers,
 } from '../services/conversations';
-import { createMessage, isMember, listMessages, markRead, type MessageType } from '../services/messages';
+import { createMessage, isMember, listMessages, markRead, searchMessages, type MessageType } from '../services/messages';
 import { ah, HttpError, requireId, requireIdArray, requireString } from '../util';
 
 const router = Router();
 
-const MESSAGE_TYPES: MessageType[] = ['text', 'image', 'file'];
+const MESSAGE_TYPES: MessageType[] = ['text', 'file'];
 
 async function requireApprovedUsers(userIds: number[]): Promise<void> {
   if (userIds.length === 0) {
@@ -97,6 +97,26 @@ router.post('/conversations/group', authRequired, ah(async (req, res) => {
   );
   await pushConversationToMembers(insertId, all, 'conversation:new');
   res.status(201).json({ conversation: await getConversationFor(insertId, me.id) });
+}));
+
+// 历史文字内容检索（仅本用户参与的会话）
+router.get('/conversations/search', authRequired, ah(async (req, res) => {
+  const keyword = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!keyword) {
+    throw new HttpError(400, '请输入搜索关键字');
+  }
+  if (keyword.length > 100) {
+    throw new HttpError(400, '关键字过长');
+  }
+  const limit = Math.min(Math.max(requireId(req.query.limit ?? 20, '数量'), 1), 50);
+  const before = Number(req.query.before);
+  const { results, hasMore } = await searchMessages(
+    req.user!.id,
+    keyword,
+    limit,
+    Number.isFinite(before) && before > 0 ? before : undefined,
+  );
+  res.json({ results, hasMore });
 }));
 
 // 会话详情（含成员）

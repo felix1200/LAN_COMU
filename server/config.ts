@@ -23,9 +23,14 @@ export const config = {
     database: process.env.DB_NAME || 'intranet_im',
   },
   jwtSecret: process.env.JWT_SECRET || 'intranet-im-insecure-dev-secret',
-  tokenTtlSeconds: int(process.env.TOKEN_TTL_SECONDS, 12 * 3600),
+  // 需求基线：登录会话永久保持（不设过期）；账号被禁用时由请求态校验即时拦截
+  tokenTtlSeconds: Number(process.env.TOKEN_TTL_SECONDS ?? 0) || 0, // 0 = 永不超时
   uploadDir: path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
-  maxUploadMb: int(process.env.MAX_UPLOAD_MB, 50),
+  maxUploadMb: int(process.env.MAX_UPLOAD_MB, 100), // 需求基线：单文件上限 100MB
+  login: {
+    maxAttempts: int(process.env.LOGIN_MAX_ATTEMPTS, 5), // 需求基线：连续 5 次失败
+    lockMinutes: int(process.env.LOGIN_LOCK_MINUTES, 30), // 锁 30 分钟
+  },
   admin: {
     username: process.env.ADMIN_USERNAME || 'admin',
     initialPassword: process.env.ADMIN_INITIAL_PASSWORD || 'Admin@123456',

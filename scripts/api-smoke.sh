@@ -76,11 +76,7 @@ CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: applicat
   -d "{\"username\":\"$U4\",\"password\":\"$PASS\"}" "$BASE/api/auth/login")
 [ "$CODE" = "403" ] || fail "rejected login expected 403 got $CODE"
 say "POST /api/admin/users/:id/reject -> 驳回后登录 403"
-
-# 删除被驳回用户
-curl -s -X DELETE -H "Authorization: Bearer $AT" "$BASE/api/admin/users/$ID4" \
-  | grep -q '"ok":true' || fail "delete rejected user"
-say "DELETE /api/admin/users/:id（驳回账号可删除）"
+# 需求基线：删除=禁用、保留历史，无硬删除接口（不在此断言）
 
 # ---------- 5. 审核通过 U1/U2/U3，登录 ----------
 ID1=$(admin_id_of "$U1"); ID2=$(admin_id_of "$U2"); ID3=$(admin_id_of "$U3")
@@ -203,9 +199,37 @@ curl -s -X POST -H 'Content-Type: application/json' \
   | grep -q '"token"' || fail "login after enable"
 say "disable -> 403，enable -> 恢复登录"
 
-curl -s "$BASE/api/admin/stats" -H "Authorization: Bearer $AT" | grep -q '"messages"' || fail "stats"
-curl -s "$BASE/api/admin/groups" -H "Authorization: Bearer $AT" | grep -q '冒烟改名群' || fail "admin groups"
-say "GET /api/admin/stats + /api/admin/groups"
+# ---------- 10b. 历史文字搜索（需求基线：关键词搜索历史文字） ----------
+curl -s "$BASE/api/conversations/search?q=%E5%86%92%E7%83%9F&limit=20" -H "Authorization: Bearer $T1" \
+  | grep -q '"results"' || fail "message search"
+curl -s "$BASE/api/conversations/search?q=%E7%AC%AC%E4%B8%80%E6%9D%A1%E7%A7%81%E8%81%8A&limit=20" -H "Authorization: Bearer $T1" \
+  | grep -q '"conversationTitle"' || fail "message search hit title"
+say "GET /api/conversations/search（历史文字搜索）"
+
+# ---------- 10c. 头像上传（≤2MB jpg/png/webp） ----------
+python3 - "$TS" > "/tmp/smk-avatar-$TS.png" <<'PY'
+import sys, base64
+# 1x1 像素 PNG
+sys.stdout.buffer.write(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
+PY
+AVID=$(curl -s -X POST -H "Authorization: Bearer $T3" -F "file=@/tmp/smk-avatar-$TS.png;type=image/png" \
+  "$BASE/api/users/me/avatar" | json_field "d['avatarId']") || fail "avatar upload"
+curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $T3" \
+  | grep -q "\"avatarId\":$AVID" || fail "avatar reflect in me"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $T3" "$BASE/api/files/$AVID")
+[ "$CODE" = "200" ] || fail "avatar access expected 200 got $CODE"
+say "POST /api/users/me/avatar + GET /api/files/:id（头像内联可访问）"
+
+# ---------- 10d. 登录失败锁定：连续 5 次错误锁 30 分钟 ----------
+for i in 1 2 3 4 5; do
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$U3\",\"password\":\"wrongpass$i\"}" "$BASE/api/auth/login")
+  [ "$CODE" = "401" ] || fail "wrong login #$i expected 401 got $CODE"
+done
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$U3\",\"password\":\"$PASS\"}" "$BASE/api/auth/login")
+[ "$CODE" = "429" ] || fail "login lockout expected 429 got $CODE"
+say "连续 5 次失败后登录被锁定 -> 429"
 
 # ---------- 11. 鉴权边界 ----------
 CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/users")

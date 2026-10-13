@@ -14,7 +14,7 @@ import { HttpError } from '../util';
 import { createMessage, isMember, markRead, type MessageType } from '../services/messages';
 import { createEndpoint, type WsMessage } from './registry';
 
-const MESSAGE_TYPES: MessageType[] = ['text', 'image', 'file'];
+const MESSAGE_TYPES: MessageType[] = ['text', 'file'];
 
 interface SendPayload {
   conversationId?: number;

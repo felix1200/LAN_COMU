@@ -2,13 +2,13 @@
 
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import { authRequired, signToken } from '../auth';
+import { authRequired, loginLockRemaining, recordLoginFailure, resetLoginFailures, signToken } from '../auth';
 import { execute, queryOne } from '../db';
 import { ah, HttpError, requireString } from '../util';
 
 const router = Router();
 
-const USERNAME_RE = /^[a-zA-Z0-9_]{3,32}$/;
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/; // 需求基线：3-20 位，字母/数字/下划线，唯一
 const BCRYPT_MAX_PASSWORD_LEN = 72;
 
 interface UserAuthRow {
@@ -19,25 +19,30 @@ interface UserAuthRow {
   role: 'admin' | 'member';
   status: 'pending' | 'approved' | 'rejected' | 'disabled';
   reject_reason: string | null;
+  avatar: number | null;
 }
 
 function validatePassword(password: string): void {
-  if (password.length < 8) {
-    throw new HttpError(400, '密码长度至少 8 位');
+  // 需求基线：至少 6 位，不强制复杂度
+  if (password.length < 6) {
+    throw new HttpError(400, '密码长度至少 6 位');
   }
   if (password.length > BCRYPT_MAX_PASSWORD_LEN) {
     throw new HttpError(400, `密码长度不能超过 ${BCRYPT_MAX_PASSWORD_LEN} 位`);
   }
 }
 
-// 注册：创建 pending 用户，等待管理员审核
+// 注册：创建 pending 用户，等待管理员审核（仅普通用户，管理员由后台预置）
 router.post('/auth/register', ah(async (req, res) => {
-  const username = requireString(req.body?.username, '用户名', 32);
+  const username = requireString(req.body?.username, '用户名', 20);
   const displayName = requireString(req.body?.displayName, '姓名', 64);
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
   if (!USERNAME_RE.test(username)) {
-    throw new HttpError(400, '用户名需为 3-32 位字母、数字或下划线');
+    throw new HttpError(400, '用户名需为 3-20 位字母、数字或下划线');
+  }
+  if (!displayName.trim()) {
+    throw new HttpError(400, '请填写真实姓名');
   }
   validatePassword(password);
 
@@ -55,17 +60,21 @@ router.post('/auth/register', ah(async (req, res) => {
   res.status(201).json({ message: '注册申请已提交，管理员审核通过后即可登录' });
 }));
 
-// 登录：校验 bcrypt 哈希与账号审核状态
+// 登录：失败锁定 → 校验 bcrypt 哈希 → 账号审核状态
 router.post('/auth/login', ah(async (req, res) => {
   const username = requireString(req.body?.username, '用户名', 64);
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-  const user = await queryOne<UserAuthRow>('SELECT * FROM users WHERE username = ?', [username]);
-  if (!user) {
-    throw new HttpError(401, '用户名或密码错误');
+  const lockSeconds = loginLockRemaining(username);
+  if (lockSeconds > 0) {
+    const minutes = Math.ceil(lockSeconds / 60);
+    throw new HttpError(429, `密码连续错误次数过多，账号已锁定，请约 ${minutes} 分钟后重试`);
   }
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) {
+
+  const user = await queryOne<UserAuthRow>('SELECT * FROM users WHERE username = ?', [username]);
+  const ok = user ? await bcrypt.compare(password, user.password_hash) : false;
+  if (!user || !ok) {
+    recordLoginFailure(username);
     throw new HttpError(401, '用户名或密码错误');
   }
   if (user.status === 'pending') {
@@ -78,6 +87,7 @@ router.post('/auth/login', ah(async (req, res) => {
     throw new HttpError(403, '账号已被禁用，请联系管理员');
   }
 
+  resetLoginFailures(username);
   const token = signToken({ id: Number(user.id), username: user.username, role: user.role });
   res.json({
     token,
@@ -86,6 +96,7 @@ router.post('/auth/login', ah(async (req, res) => {
       username: user.username,
       displayName: user.display_name,
       role: user.role,
+      avatarId: user.avatar != null ? Number(user.avatar) : null,
     },
   });
 }));

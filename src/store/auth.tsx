@@ -10,6 +10,8 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<User>;
   register: (username: string, displayName: string, password: string) => Promise<string>;
   logout: () => void;
+  /** 重新拉取当前用户（资料/头像更新后调用） */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -60,9 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const refresh = useCallback(async () => {
+    if (!getToken()) {
+      return;
+    }
+    const res = await api<{ user: User }>('/api/auth/me');
+    setUser(res.user);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
-    [user, loading, login, register, logout],
+    () => ({ user, loading, login, register, logout, refresh }),
+    [user, loading, login, register, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,12 +1,11 @@
-// ABOUTME: 管理员路由：注册审核、用户管理（禁用/重置密码/删除）、群组管理、运营统计
+// ABOUTME: 管理员路由：注册审核、账号管理（禁用/启用/重置密码/删除=禁用）、数据概览
 
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { adminRequired, authRequired } from '../auth';
 import { execute, query, queryOne } from '../db';
 import { forceDisconnect, onlineUserIds, sendToUser } from '../hub';
-import { deleteConversation } from '../services/conversations';
-import { ah, HttpError, requireId, requireString } from '../util';
+import { ah, HttpError, requireId } from '../util';
 
 const router = Router();
 
@@ -21,6 +20,7 @@ interface AdminUserRow {
   displayName: string;
   role: 'admin' | 'member';
   status: UserStatus;
+  avatarId: number | null;
   rejectReason: string | null;
   createdAt: Date | string;
   reviewedAt: Date | string | null;
@@ -34,20 +34,20 @@ function toISOOrNull(value: Date | string | null): string | null {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
+const USER_COLUMNS = `u.id, u.username, u.display_name AS displayName, u.role, u.status,
+  u.avatar AS avatarId, u.reject_reason AS rejectReason, u.created_at AS createdAt,
+  u.reviewed_at AS reviewedAt, r.display_name AS reviewerName`;
+
 // 用户列表（按状态/关键字过滤）
 router.get('/users', ah(async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : '';
   const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
   const params: unknown[] = [];
-  let sql = `
-    SELECT u.id, u.username, u.display_name AS displayName, u.role, u.status,
-           u.reject_reason AS rejectReason, u.created_at AS createdAt,
-           u.reviewed_at AS reviewedAt, r.display_name AS reviewerName
+  let sql = `SELECT ${USER_COLUMNS}
     FROM users u
     LEFT JOIN users r ON r.id = u.reviewed_by
-    WHERE 1 = 1
-  `;
-  if (status && STATUSES.includes(status as UserStatus)) {
+    WHERE 1 = 1`;
+  if (status && (STATUSES as string[]).includes(status)) {
     sql += ' AND u.status = ?';
     params.push(status);
   }
@@ -64,6 +64,7 @@ router.get('/users', ah(async (req, res) => {
       displayName: r.displayName,
       role: r.role,
       status: r.status,
+      avatarId: r.avatarId != null ? Number(r.avatarId) : null,
       rejectReason: r.rejectReason,
       createdAt: toISOOrNull(r.createdAt),
       reviewedAt: toISOOrNull(r.reviewedAt),
@@ -74,10 +75,7 @@ router.get('/users', ah(async (req, res) => {
 
 async function loadManagedUser(userId: number): Promise<AdminUserRow> {
   const user = await queryOne<AdminUserRow>(
-    `SELECT u.id, u.username, u.display_name AS displayName, u.role, u.status,
-            u.reject_reason AS rejectReason, u.created_at AS createdAt,
-            u.reviewed_at AS reviewedAt, NULL AS reviewerName
-     FROM users u WHERE u.id = ?`,
+    `SELECT ${USER_COLUMNS} FROM users u LEFT JOIN users r ON r.id = u.reviewed_by WHERE u.id = ?`,
     [userId],
   );
   if (!user) {
@@ -95,11 +93,28 @@ async function setStatus(userId: number, status: UserStatus, reviewerId: number,
   ]);
 }
 
+/** 禁用并强制下线（删除账号=标记禁用，保留历史聊天记录） */
+async function disableUser(userId: number, actorId: number): Promise<void> {
+  const user = await loadManagedUser(userId);
+  if (userId === actorId) {
+    throw new HttpError(400, '不能禁用自己的账号');
+  }
+  if (user.role === 'admin') {
+    throw new HttpError(400, '不能禁用管理员账号');
+  }
+  if (user.status !== 'approved') {
+    throw new HttpError(400, '仅已启用的账号可以禁用');
+  }
+  await setStatus(userId, 'disabled', actorId, null);
+  sendToUser(userId, { type: 'account:disabled', payload: null });
+  forceDisconnect(userId);
+}
+
 // 审核通过
 router.post('/users/:id/approve', ah(async (req, res) => {
   const userId = requireId(req.params.id, '用户');
   const user = await loadManagedUser(userId);
-  if (user.status !== 'pending' && user.status !== 'rejected' && user.status !== 'disabled') {
+  if (!['pending', 'rejected', 'disabled'].includes(user.status)) {
     throw new HttpError(400, '该用户无需审核');
   }
   await setStatus(userId, 'approved', req.user!.id, null);
@@ -121,20 +136,13 @@ router.post('/users/:id/reject', ah(async (req, res) => {
 
 // 禁用账号（并强制下线）
 router.post('/users/:id/disable', ah(async (req, res) => {
-  const userId = requireId(req.params.id, '用户');
-  const user = await loadManagedUser(userId);
-  if (userId === req.user!.id) {
-    throw new HttpError(400, '不能禁用自己的账号');
-  }
-  if (user.role === 'admin') {
-    throw new HttpError(400, '不能禁用管理员账号');
-  }
-  if (user.status !== 'approved') {
-    throw new HttpError(400, '仅已启用的账号可以禁用');
-  }
-  await setStatus(userId, 'disabled', req.user!.id, null);
-  sendToUser(userId, { type: 'account:disabled', payload: null });
-  forceDisconnect(userId);
+  await disableUser(requireId(req.params.id, '用户'), req.user!.id);
+  res.json({ ok: true });
+}));
+
+// 删除账号 = 标记禁用（保留历史聊天记录）
+router.delete('/users/:id', ah(async (req, res) => {
+  await disableUser(requireId(req.params.id, '用户'), req.user!.id);
   res.json({ ok: true });
 }));
 
@@ -153,8 +161,8 @@ router.post('/users/:id/enable', ah(async (req, res) => {
 router.post('/users/:id/reset-password', ah(async (req, res) => {
   const userId = requireId(req.params.id, '用户');
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (password.length < 8 || password.length > 72) {
-    throw new HttpError(400, '密码长度需为 8-72 位');
+  if (password.length < 6 || password.length > 72) {
+    throw new HttpError(400, '密码长度需为 6-72 位');
   }
   await loadManagedUser(userId);
   const hash = await bcrypt.hash(password, 10);
@@ -163,65 +171,7 @@ router.post('/users/:id/reset-password', ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// 删除用户（仅限未通过审核的账号，避免产生孤儿数据）
-router.delete('/users/:id', ah(async (req, res) => {
-  const userId = requireId(req.params.id, '用户');
-  const user = await loadManagedUser(userId);
-  if (user.role === 'admin') {
-    throw new HttpError(400, '不能删除管理员账号');
-  }
-  if (user.status !== 'pending' && user.status !== 'rejected') {
-    throw new HttpError(400, '仅待审核或已驳回的账号可以删除，已启用账号请使用禁用');
-  }
-  await execute('DELETE FROM users WHERE id = ?', [userId]);
-  res.json({ ok: true });
-}));
-
-// 群聊列表（全站）
-router.get('/groups', ah(async (_req, res) => {
-  const rows = await query<{
-    id: number;
-    name: string;
-    creatorName: string | null;
-    memberCount: number;
-    messageCount: number;
-    createdAt: Date | string;
-  }>(
-    `SELECT c.id, c.name,
-            u.display_name AS creatorName,
-            (SELECT COUNT(*) FROM conversation_members cm WHERE cm.conversation_id = c.id) AS memberCount,
-            (SELECT COUNT(*) FROM messages msg WHERE msg.conversation_id = c.id) AS messageCount,
-            c.created_at AS createdAt
-     FROM conversations c
-     LEFT JOIN users u ON u.id = c.creator_id
-     WHERE c.type = 'group'
-     ORDER BY c.id DESC
-     LIMIT 500`,
-  );
-  res.json({
-    groups: rows.map((r) => ({
-      id: Number(r.id),
-      name: r.name,
-      creatorName: r.creatorName ?? '未知',
-      memberCount: Number(r.memberCount),
-      messageCount: Number(r.messageCount),
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-    })),
-  });
-}));
-
-// 解散群聊
-router.delete('/groups/:id', ah(async (req, res) => {
-  const conversationId = requireId(req.params.id, '群聊');
-  const conv = await queryOne<{ id: number; type: string }>('SELECT id, type FROM conversations WHERE id = ?', [conversationId]);
-  if (!conv || conv.type !== 'group') {
-    throw new HttpError(404, '群聊不存在');
-  }
-  await deleteConversation(conversationId);
-  res.json({ ok: true });
-}));
-
-// 运营概览
+// 数据概览（最小运营指标，不涉及会话干预）
 router.get('/stats', ah(async (_req, res) => {
   const byStatus = await query<{ status: UserStatus; cnt: number }>(
     'SELECT status, COUNT(*) AS cnt FROM users GROUP BY status',
@@ -240,9 +190,6 @@ router.get('/stats', ah(async (_req, res) => {
   const groupCount = await queryOne<{ cnt: number }>(
     "SELECT COUNT(*) AS cnt FROM conversations WHERE type = 'group'",
   );
-  const directCount = await queryOne<{ cnt: number }>(
-    "SELECT COUNT(*) AS cnt FROM conversations WHERE type = 'direct'",
-  );
   res.json({
     stats: {
       users: {
@@ -252,7 +199,7 @@ router.get('/stats', ah(async (_req, res) => {
         rejected: statusMap.rejected ?? 0,
         disabled: statusMap.disabled ?? 0,
       },
-      conversations: { group: Number(groupCount?.cnt ?? 0), direct: Number(directCount?.cnt ?? 0) },
+      conversations: { group: Number(groupCount?.cnt ?? 0) },
       messages: { total: Number(msgTotal?.cnt ?? 0), today: Number(msgToday?.cnt ?? 0) },
       files: { count: Number(fileStats?.cnt ?? 0), bytes: Number(fileStats?.bytes ?? 0) },
       online: onlineUserIds().length,

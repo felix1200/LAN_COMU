@@ -1,4 +1,4 @@
-import { KeyRound, LogOut, MessageSquare, RadioTower, ShieldCheck, Users } from 'lucide-react';
+import { KeyRound, LogOut, MessageSquare, RadioTower, Search, ShieldCheck, UserCircle, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../../api/types';
@@ -15,6 +15,8 @@ interface RailProps {
   user: User;
   onChangePassword: () => void;
   onLogout: () => void;
+  onSearch: () => void;
+  onProfile: () => void;
 }
 
 const STATUS_STYLE: Record<WsStatus, { cls: string; label: string }> = {
@@ -55,7 +57,7 @@ function RailButton({
   );
 }
 
-export default function Rail({ tab, onTabChange, unread, wsStatus, user, onChangePassword, onLogout }: RailProps) {
+export default function Rail({ tab, onTabChange, unread, wsStatus, user, onChangePassword, onLogout, onSearch, onProfile }: RailProps) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -92,6 +94,11 @@ export default function Rail({ tab, onTabChange, unread, wsStatus, user, onChang
 
       <div className="flex-1" />
 
+      {/* 历史消息搜索 */}
+      <RailButton label="搜索历史消息" onClick={onSearch}>
+        <Search size={18} strokeWidth={1.75} />
+      </RailButton>
+
       {/* 管理后台入口 */}
       {user.role === 'admin' && (
         <div className="mb-2">
@@ -109,7 +116,7 @@ export default function Rail({ tab, onTabChange, unread, wsStatus, user, onChang
       {/* 用户菜单 */}
       <div className="relative" ref={menuRef}>
         <button type="button" onClick={() => setMenuOpen((v) => !v)} title={user.displayName}>
-          <Avatar id={user.id} name={user.displayName} size={34} rounded="sm" />
+          <Avatar id={user.id} name={user.displayName} size={34} rounded="sm" avatarId={user.avatarId ?? null} />
         </button>
         {menuOpen && (
           <div className="absolute bottom-0 left-12 z-30 w-44 overflow-hidden rounded-md border border-line bg-paper shadow-lg">
@@ -117,6 +124,17 @@ export default function Rail({ tab, onTabChange, unread, wsStatus, user, onChang
               <div className="truncate text-[13px] font-medium text-main">{user.displayName}</div>
               <div className="truncate font-mono text-[11px] text-sub">@{user.username}</div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onProfile();
+              }}
+              className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[13px] text-main transition-colors duration-100 hover:bg-paper-deep"
+            >
+              <UserCircle size={14} strokeWidth={1.75} className="text-sub" />
+              我的资料
+            </button>
             <button
               type="button"
               onClick={() => {

@@ -4,7 +4,9 @@ import ChangePasswordModal from '../components/chat/ChangePasswordModal';
 import ChatWindow from '../components/chat/ChatWindow';
 import ContactsPanel from '../components/chat/ContactsPanel';
 import ConversationList from '../components/chat/ConversationList';
+import ProfileModal from '../components/chat/ProfileModal';
 import Rail, { type RailTab } from '../components/chat/Rail';
+import SearchModal from '../components/chat/SearchModal';
 import { useAuth } from '../store/auth';
 import { ChatProvider, useChat } from '../store/chat';
 
@@ -20,7 +22,17 @@ function EmptyState() {
   );
 }
 
-function ChatShell({ onLogout, onChangePassword }: { onLogout: () => void; onChangePassword: () => void }) {
+function ChatShell({
+  onLogout,
+  onChangePassword,
+  onSearch,
+  onProfile,
+}: {
+  onLogout: () => void;
+  onChangePassword: () => void;
+  onSearch: () => void;
+  onProfile: () => void;
+}) {
   const { user } = useAuth();
   const { totalUnread, wsStatus, activeConversation } = useChat();
   const [tab, setTab] = useState<RailTab>('chats');
@@ -39,6 +51,8 @@ function ChatShell({ onLogout, onChangePassword }: { onLogout: () => void; onCha
         user={user}
         onChangePassword={onChangePassword}
         onLogout={onLogout}
+        onSearch={onSearch}
+        onProfile={onProfile}
       />
       <div className="w-72 shrink-0 border-r border-line bg-paper">
         {tab === 'chats' ? <ConversationList /> : <ContactsPanel onStarted={() => setTab('chats')} />}
@@ -51,10 +65,19 @@ function ChatShell({ onLogout, onChangePassword }: { onLogout: () => void; onCha
 export default function ChatPage() {
   const { logout } = useAuth();
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   return (
     <ChatProvider>
-      <ChatShell onLogout={logout} onChangePassword={() => setPwdOpen(true)} />
+      <ChatShell
+        onLogout={logout}
+        onChangePassword={() => setPwdOpen(true)}
+        onSearch={() => setSearchOpen(true)}
+        onProfile={() => setProfileOpen(true)}
+      />
       {pwdOpen && <ChangePasswordModal onClose={() => setPwdOpen(false)} />}
+      {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}
+      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
     </ChatProvider>
   );
 }

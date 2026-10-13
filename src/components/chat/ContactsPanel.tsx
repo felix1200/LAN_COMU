@@ -71,7 +71,7 @@ export default function ContactsPanel({ onStarted }: { onStarted: () => void }) 
                 onClick={() => void handleStart(contact.id)}
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-100 hover:bg-paper-deep/60 disabled:cursor-default disabled:opacity-70"
               >
-                <Avatar id={contact.id} name={contact.displayName} size={38} online={onlineIds.has(contact.id)} />
+                <Avatar id={contact.id} name={contact.displayName} size={38} online={onlineIds.has(contact.id)} avatarId={contact.avatarId ?? null} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-[14px] font-medium text-main">{contact.displayName}</span>

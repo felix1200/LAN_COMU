@@ -1,57 +1,12 @@
 import { AlertCircle, Download, FileText, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { downloadFile, fetchFileBlob } from '../../api/client';
+import { useState } from 'react';
+import { downloadFile } from '../../api/client';
 import type { FileRef } from '../../api/types';
 import { formatBytes, formatTime } from '../../lib/format';
 import { toast } from '../../lib/toast';
 import { useAuth } from '../../store/auth';
 import type { UiMessage } from '../../store/chat';
 import Avatar from '../Avatar';
-
-/** 拉取带鉴权的图片并转为 ObjectURL */
-function useImageUrl(fileId: number): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    fetchFileBlob(fileId, true)
-      .then((blob) => {
-        if (cancelled) {
-          return;
-        }
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [fileId]);
-  return url;
-}
-
-function ImageMessage({ file }: { file: FileRef }) {
-  const url = useImageUrl(file.id);
-  if (!url) {
-    return (
-      <div className="flex h-32 w-52 items-center justify-center rounded-md border border-line bg-paper-deep">
-        <Loader2 size={16} className="animate-spin text-sub" />
-      </div>
-    );
-  }
-  return (
-    <button type="button" onClick={() => window.open(url, '_blank')} className="block cursor-zoom-in">
-      <img
-        src={url}
-        alt={file.name}
-        className="max-h-56 max-w-[260px] rounded-md border border-line object-cover"
-      />
-    </button>
-  );
-}
 
 function FileMessage({ file, own }: { file: FileRef; own: boolean }) {
   const [downloading, setDownloading] = useState(false);
@@ -99,13 +54,19 @@ interface MessageItemProps {
   message: UiMessage;
   showSender: boolean;
   isDirect: boolean;
+  /** 私聊：对方已读时间 */
   peerReadAt: string | null;
+  /** 群聊：除自己外已读人数 / 总人数（不展示名单） */
+  groupRead: { readCount: number; readTotal: number } | null;
 }
 
-export default function MessageItem({ message, showSender, isDirect, peerReadAt }: MessageItemProps) {
+export default function MessageItem({ message, showSender, isDirect, peerReadAt, groupRead }: MessageItemProps) {
   const { user } = useAuth();
   const own = message.senderId === user?.id;
-  const read = own && isDirect && peerReadAt !== null && Date.parse(message.createdAt) <= Date.parse(peerReadAt);
+  const directRead = own && isDirect && peerReadAt !== null && Date.parse(message.createdAt) <= Date.parse(peerReadAt);
+  const groupReadText = own && groupRead && groupRead.readTotal > 0
+    ? `${groupRead.readCount}/${groupRead.readTotal} 已读`
+    : null;
 
   const meta = (
     <div className={`mt-1 flex items-center gap-1.5 font-mono text-[10px] text-sub ${own ? 'justify-end' : ''}`}>
@@ -118,14 +79,13 @@ export default function MessageItem({ message, showSender, isDirect, peerReadAt 
           发送失败
         </span>
       )}
-      {read && <span className="text-signal">已读</span>}
+      {directRead && <span className="text-signal">已读</span>}
+      {groupReadText && <span className="text-signal/85">{groupReadText}</span>}
     </div>
   );
 
   const body =
-    message.type === 'image' && message.file ? (
-      <ImageMessage file={message.file} />
-    ) : message.type === 'file' && message.file ? (
+    message.type === 'file' && message.file ? (
       <FileMessage file={message.file} own={own} />
     ) : (
       <div

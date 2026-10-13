@@ -75,10 +75,14 @@ router.post('/files/upload', authRequired, uploadSingle, ah(async (req, res) => 
   });
 }));
 
-/** 下载权限：上传者本人 / 管理员 / 与文件同会话的成员 */
+/** 下载权限：上传者本人 / 管理员 / 与文件同会话的成员 / 任意用户的头像 */
 async function canAccessFile(userId: number, role: string, file: FileRow): Promise<boolean> {
   if (Number(file.uploader_id) === userId || role === 'admin') {
     return true;
+  }
+  const avatarRow = await queryOne<{ ok: number }>('SELECT 1 AS ok FROM users WHERE avatar = ?', [file.id]);
+  if (avatarRow) {
+    return true; // 头像对全体已审核用户可见
   }
   const row = await queryOne<{ ok: number }>(
     `SELECT 1 AS ok FROM messages m
@@ -89,7 +93,7 @@ async function canAccessFile(userId: number, role: string, file: FileRow): Promi
   return row !== null;
 }
 
-// 下载 / 内联预览（?inline=1 仅对图片生效）
+// 下载。头像（身份标识）以 image inline 返回以便展示；聊天中的文件一律 attachment 仅下载（需求基线：不做在线预览）
 router.get('/files/:id', authRequired, ah(async (req, res) => {
   const fileId = requireId(req.params.id, '文件');
   const file = await queryOne<FileRow>('SELECT * FROM files WHERE id = ?', [fileId]);
@@ -104,7 +108,9 @@ router.get('/files/:id', authRequired, ah(async (req, res) => {
     throw new HttpError(404, '文件已丢失，请联系管理员');
   }
 
-  const inline = req.query.inline === '1' && file.mime.startsWith('image/');
+  const isAvatar = (await queryOne<{ ok: number }>('SELECT 1 AS ok FROM users WHERE avatar = ?', [file.id])) !== null;
+  const isImage = file.mime.startsWith('image/');
+  const inline = isAvatar && isImage;
   res.setHeader('Content-Type', inline ? file.mime : 'application/octet-stream');
   res.setHeader('Content-Length', String(file.size));
   res.setHeader(

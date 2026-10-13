@@ -18,6 +18,7 @@ export default function ChatWindow() {
     typingEntries,
     onlineIds,
     peerReadAt,
+    activeMembers,
   } = useChat();
   const [panelOpen, setPanelOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -117,6 +118,16 @@ export default function ChatWindow() {
                 const prev = messages[index - 1];
                 const showDivider =
                   index === 0 || !isSameDay(new Date(prev.createdAt), new Date(message.createdAt));
+                // 群聊 X/Y 已读：统计除自己外已读该消息的其他成员
+                let groupRead: { readCount: number; readTotal: number } | null = null;
+                if (conv.type === 'group' && activeMembers.length > 0) {
+                  const others = activeMembers.filter((m) => m.id !== user?.id);
+                  const t = Date.parse(message.createdAt);
+                  groupRead = {
+                    readCount: others.filter((m) => m.lastReadAt && Date.parse(m.lastReadAt) >= t).length,
+                    readTotal: others.length,
+                  };
+                }
                 return (
                   <div key={message.clientId ?? message.id}>
                     {showDivider && (
@@ -131,6 +142,7 @@ export default function ChatWindow() {
                       showSender={conv.type === 'group'}
                       isDirect={conv.type === 'direct'}
                       peerReadAt={peerReadAt}
+                      groupRead={groupRead}
                     />
                   </div>
                 );

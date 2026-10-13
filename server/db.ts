@@ -16,6 +16,7 @@ const TABLE_STATEMENTS: string[] = [
     role          VARCHAR(16)  NOT NULL DEFAULT 'member',
     status        VARCHAR(16)  NOT NULL DEFAULT 'pending',
     reject_reason VARCHAR(255) DEFAULT NULL,
+    avatar        BIGINT UNSIGNED NULL DEFAULT NULL,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     reviewed_at   TIMESTAMP    NULL DEFAULT NULL,
     reviewed_by   BIGINT UNSIGNED DEFAULT NULL,
@@ -91,6 +92,20 @@ export async function initDatabase(): Promise<void> {
   // 3) 建表
   for (const stmt of TABLE_STATEMENTS) {
     await pool.query(stmt);
+  }
+
+  // 轻量迁移：为已存在的老库补充 avatar 列（MySQL 8.0.29+/MariaDB 支持 IF NOT EXISTS）
+  try {
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar BIGINT UNSIGNED NULL DEFAULT NULL');
+  } catch {
+    // 老版本 MySQL 无 IF NOT EXISTS：先探测是否已存在
+    const [cols] = await pool.query<mysql.RowDataPacket[]>(
+      "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'avatar'",
+      [config.db.database],
+    );
+    if (Number(cols[0]?.cnt ?? 0) === 0) {
+      await pool.query('ALTER TABLE users ADD COLUMN avatar BIGINT UNSIGNED NULL DEFAULT NULL');
+    }
   }
 
   // 4) 种子管理员：仅当库中不存在任何管理员时创建

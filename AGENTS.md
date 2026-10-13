@@ -38,6 +38,16 @@
 └── uploads/               # 聊天文件存储（运行时创建，勿入库）
 ```
 
+## 需求基线合规要点（改动时勿破坏）
+
+- **账号规则**：用户名 `^[a-zA-Z0-9_]{3,20}$`；密码仅要求 ≥6 位（≤72），不强制复杂度；注册三字段（用户名/密码/姓名），需管理员审核；登录失败连续 5 次锁 30 分钟（内存 Map，返回 429 + `lockedRemaining`）。
+- **会话**：JWT 永久有效（`signToken` 不设 expiresIn），登录态恢复时仍经 `loadAuthUser` 校验状态。
+- **消息**：仅 `text` / `file` 两种类型，无 image 类型、聊天文件不做在线预览（仅下载）；文字 ≤2000 字；私聊单条已读、群聊 X/Y 已读（用成员 `lastReadAt` 比对消息时间）。
+- **搜索**：`GET /api/conversations/search?q=&limit=&before=`（注意参数名 `q`）检索本用户参与会话的历史文字消息；用户搜索见 `GET /api/users?keyword=`。
+- **头像**：`POST /users/me/avatar`（multer 字段名 `file`，≤2MB，jpg/png/webp）+ `DELETE /users/me/avatar`；`users.avatar` 存 files.id；头像经 `GET /api/files/:id?inline=1` 内联展示。
+- **文件**：≤100MB；下载需上传者本人或会话成员，前端一律 `fetch`+`blob`（禁裸 `<a download>`）。
+- **管理员**：仅「注册审核」+「用户管理」两个面板；**无**群聊管理/统计/硬删除；删除账号 = `disable`（标记禁用、保留历史聊天记录），已删除用户不可重新删除。
+
 ## 包管理规范
 
 **仅允许使用 pnpm**，严禁 npm/yarn。常用：`pnpm add <pkg>` / `pnpm add -D <pkg>` / `pnpm install`。

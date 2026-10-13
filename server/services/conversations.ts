@@ -29,6 +29,7 @@ export interface MemberDTO {
   username: string;
   displayName: string;
   isCreator: boolean;
+  avatarId: number | null;
   joinedAt: string;
   lastReadAt: string;
 }
@@ -151,10 +152,11 @@ export async function listMembers(conversationId: number): Promise<MemberDTO[]> 
     username: string;
     displayName: string;
     isCreator: number;
+    avatarId: number | null;
     joinedAt: Date | string;
     lastReadAt: Date | string;
   }>(
-    `SELECT u.id, u.username, u.display_name AS displayName,
+    `SELECT u.id, u.username, u.display_name AS displayName, u.avatar AS avatarId,
             (c.creator_id = u.id) AS isCreator,
             cm.joined_at AS joinedAt,
             cm.last_read_at AS lastReadAt
@@ -169,6 +171,7 @@ export async function listMembers(conversationId: number): Promise<MemberDTO[]> 
     id: Number(r.id),
     username: r.username,
     displayName: r.displayName,
+    avatarId: r.avatarId != null ? Number(r.avatarId) : null,
     isCreator: Number(r.isCreator) === 1,
     joinedAt: toISO(r.joinedAt),
     lastReadAt: toISO(r.lastReadAt),
