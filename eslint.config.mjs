@@ -25,6 +25,7 @@ export default defineConfig([
   globalIgnores([
     'dist/**',
     'dist-server/**',
+    'release/**',
     'node_modules/**',
     'scripts/**',
   ]),

@@ -4,7 +4,8 @@
 import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// .env 固定放在「项目/包根目录」（模块目录的上一级：dev=server/、prod bundle=dist-server/）
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 function int(value: string | undefined, fallback: number): number {
   const n = parseInt(value ?? '', 10);
@@ -25,7 +26,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'intranet-im-insecure-dev-secret',
   // 需求基线：登录会话永久保持（不设过期）；账号被禁用时由请求态校验即时拦截
   tokenTtlSeconds: Number(process.env.TOKEN_TTL_SECONDS ?? 0) || 0, // 0 = 永不超时
-  uploadDir: path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
+  uploadDir: path.resolve(__dirname, '..', process.env.UPLOAD_DIR || 'uploads'),
   maxUploadMb: int(process.env.MAX_UPLOAD_MB, 100), // 需求基线：单文件上限 100MB
   login: {
     maxAttempts: int(process.env.LOGIN_MAX_ATTEMPTS, 5), // 需求基线：连续 5 次失败

@@ -147,3 +147,6 @@ node-compile-cache/
 # IM 系统产物
 dist-server
 uploads
+
+# 发布包（源码/编译产物 + 内置 node_modules）
+release/
