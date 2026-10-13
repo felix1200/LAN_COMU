@@ -47,6 +47,7 @@
 - **头像**：`POST /users/me/avatar`（multer 字段名 `file`，≤2MB，jpg/png/webp）+ `DELETE /users/me/avatar`；`users.avatar` 存 files.id；头像经 `GET /api/files/:id?inline=1` 内联展示。
 - **文件**：≤100MB；下载需上传者本人或会话成员，前端一律 `fetch`+`blob`（禁裸 `<a download>`）。
 - **管理员**：仅「注册审核」+「用户管理」两个面板；**无**群聊管理/统计/硬删除；删除账号 = `disable`（标记禁用、保留历史聊天记录），已删除用户不可重新删除。
+- **首次登录强制改密**：种子管理员创建时 `users.must_change_password=1`；登录/`/auth/me` 返回 `mustChangePassword`；前端 `App` 路由守卫在 `user.mustChangePassword` 为真时强制渲染 `FirstLoginPasswordChange`（未改密无法进入任何业务/管理界面）；`PUT /auth/password` 与管理员 `reset-password` 均会将该标志置 `0`。
 
 ## 包管理规范
 

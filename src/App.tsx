@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import FirstLoginPasswordChange from './components/FirstLoginPasswordChange';
 import Toaster from './components/Toaster';
 import AdminPage from './pages/AdminPage';
 import ChatPage from './pages/ChatPage';
@@ -23,6 +24,10 @@ function RequireAuth({ children, admin }: { children: ReactElement; admin?: bool
   }
   if (!user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+  // 预置管理员首次登录强制改密：尚未完成改密前，无论访问哪个页面都先引导改密
+  if (user.mustChangePassword) {
+    return <FirstLoginPasswordChange />;
   }
   if (admin && user.role !== 'admin') {
     return <Navigate to="/chat" replace />;

@@ -66,7 +66,7 @@ export default function ChangePasswordModal({ onClose }: { onClose: () => void }
             required
             className={inputCls}
           />
-          <p className="mt-1 text-[12px] text-sub">至少 8 位</p>
+          <p className="mt-1 text-[12px] text-sub">至少 6 位</p>
         </div>
         <div>
           <label htmlFor="confirm-pwd" className="mb-1.5 block text-[13px] text-sub">

@@ -166,7 +166,7 @@ router.post('/users/:id/reset-password', ah(async (req, res) => {
   }
   await loadManagedUser(userId);
   const hash = await bcrypt.hash(password, 10);
-  await execute('UPDATE users SET password_hash = ? WHERE id = ?', [hash, userId]);
+  await execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [hash, userId]);
   forceDisconnect(userId);
   res.json({ ok: true });
 }));

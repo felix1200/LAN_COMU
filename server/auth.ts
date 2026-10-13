@@ -11,6 +11,8 @@ export interface AuthUser {
   displayName: string;
   role: 'admin' | 'member';
   avatarId: number | null;
+  /** 预置管理员首次登录强制改密：为 true 时禁止进入业务界面，须先修改密码 */
+  mustChangePassword: boolean;
 }
 
 // 登录失败锁定（进程内，单实例部署适用）：连续失败 N 次后锁定 M 分钟
@@ -79,12 +81,13 @@ interface DbUserStatusRow {
   role: 'admin' | 'member';
   status: string;
   avatarId: number | null;
+  mustChangePassword: boolean;
 }
 
 /** 加载已通过审核的用户；未通过/被禁用/不存在返回 null */
 export async function loadAuthUser(userId: number): Promise<AuthUser | null> {
   const row = await queryOne<DbUserStatusRow>(
-    'SELECT id, username, display_name AS displayName, role, status, avatar AS avatarId FROM users WHERE id = ?',
+    'SELECT id, username, display_name AS displayName, role, status, avatar AS avatarId, must_change_password AS mustChangePassword FROM users WHERE id = ?',
     [userId],
   );
   if (!row || row.status !== 'approved') {
@@ -96,6 +99,7 @@ export async function loadAuthUser(userId: number): Promise<AuthUser | null> {
     displayName: row.displayName,
     role: row.role,
     avatarId: row.avatarId != null ? Number(row.avatarId) : null,
+    mustChangePassword: !!row.mustChangePassword,
   };
 }
 

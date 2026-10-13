@@ -20,6 +20,7 @@ interface UserAuthRow {
   status: 'pending' | 'approved' | 'rejected' | 'disabled';
   reject_reason: string | null;
   avatar: number | null;
+  must_change_password: number;
 }
 
 function validatePassword(password: string): void {
@@ -97,6 +98,7 @@ router.post('/auth/login', ah(async (req, res) => {
       displayName: user.display_name,
       role: user.role,
       avatarId: user.avatar != null ? Number(user.avatar) : null,
+      mustChangePassword: user.must_change_password === 1,
     },
   });
 }));
@@ -121,7 +123,10 @@ router.put('/auth/password', authRequired, ah(async (req, res) => {
     throw new HttpError(400, '原密码不正确');
   }
   const hash = await bcrypt.hash(newPassword, 10);
-  await execute('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.user!.id]);
+  await execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [
+    hash,
+    req.user!.id,
+  ]);
   res.json({ message: '密码已更新' });
 }));
 

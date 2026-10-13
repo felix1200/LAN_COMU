@@ -11,6 +11,8 @@ export interface User {
   displayName: string;
   role: Role;
   avatarId?: number | null;
+  /** 预置管理员首次登录需强制改密；为 true 时前端必须引导修改密码后才能进入业务界面 */
+  mustChangePassword?: boolean;
 }
 
 export interface FileRef {

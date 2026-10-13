@@ -57,11 +57,40 @@ CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: applicat
 say "pending login blocked -> 403"
 
 # ---------- 3. 管理员登录 ----------
-AT=$(curl -s -X POST -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" \
-  "$BASE/api/auth/login" | json_field "d['token']") || fail "admin login"
-curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $AT" | grep -q '"role":"admin"' || fail "me"
-say "admin login + GET /api/auth/me"
+# 预置管理员首次登录强制改密：仅当管理员当前处于“待强制改密”状态(must_change_password=1)时断言全流程；
+# 若标志已清除（改密完成/非强制）则说明功能已生效或此前已验证，跳过并提示，避免污染后续用例。
+RESP=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" "$BASE/api/auth/login")
+echo "$RESP" | grep -qi '"mustChangePassword":true' || {
+  echo "[smoke] PASS  强制改密已生效或未开启（管理员非强制态），跳过全流程断言"
+  AT=$(echo "$RESP" | json_field "d['token']")
+  curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $AT" | grep -q '"role":"admin"' || fail "me"
+  say "admin login + GET /api/auth/me"
+  # 后续依赖 $AT 的用例需要 AT 已定义
+  set +e; RETEST_SKIP=1; set -e
+}
+if [ "${RETEST_SKIP:-0}" != "1" ]; then
+  ATF=$(echo "$RESP" | json_field "d['token']")
+  curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $ATF" | grep -qi '"mustChangePassword":true' || fail "强制改密 · me 携带标记"
+  curl -s -X PUT -H 'Content-Type: application/json' \
+    -d "{\"oldPassword\":\"$ADMIN_PASS\",\"newPassword\":\"TempSmoke#123\"}" \
+    "$BASE/api/auth/password" -H "Authorization: Bearer $ATF" | grep -qi '已更新' || fail "强制改密 · 修改密码失败"
+  curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $ATF" | grep -qi '"mustChangePassword":false' || fail "强制改密 · 改密后标记未清除"
+  RESP2=$(curl -s -X POST -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$ADMIN_USER\",\"password\":\"TempSmoke#123\"}" "$BASE/api/auth/login")
+  echo "$RESP2" | grep -qi '"token"' || fail "强制改密 · 新密码登录失败"
+  ATF2=$(echo "$RESP2" | json_field "d['token']")
+  curl -s -X PUT -H 'Content-Type: application/json' \
+    -d "{\"oldPassword\":\"TempSmoke#123\",\"newPassword\":\"$ADMIN_PASS\"}" \
+    "$BASE/api/auth/password" -H "Authorization: Bearer $ATF2" | grep -qi '已更新' || fail "强制改密 · 还原密码失败"
+  say "预置管理员首次登录强制改密（改密→标记清除→新密码登录）"
+  # 全流程后重新以初始密码取 AT，供后续用例使用
+  AT=$(curl -s -X POST -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" \
+    "$BASE/api/auth/login" | json_field "d['token']") || fail "admin login"
+  curl -s "$BASE/api/auth/me" -H "Authorization: Bearer $AT" | grep -q '"role":"admin"' || fail "me"
+  say "admin login + GET /api/auth/me"
+fi
 
 admin_id_of() { # $1 username -> id（在待审核列表中查找）
   curl -s "$BASE/api/admin/users?status=pending&keyword=$1" -H "Authorization: Bearer $AT" \

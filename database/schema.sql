@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   status        VARCHAR(16)  NOT NULL DEFAULT 'pending' COMMENT 'pending | approved | rejected | disabled',
   reject_reason VARCHAR(255) DEFAULT NULL,
   avatar        BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '头像文件ID，关联 files.id',
+  must_change_password TINYINT(1) NOT NULL DEFAULT 0 COMMENT '预置管理员首次登录强制改密；改密后置 0',
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   reviewed_at   TIMESTAMP    NULL DEFAULT NULL,
   reviewed_by   BIGINT UNSIGNED DEFAULT NULL,
