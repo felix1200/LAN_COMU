@@ -47,6 +47,11 @@ export default function Composer() {
     if (!file) {
       return;
     }
+    const maxBytes = 100 * 1024 * 1024; // 与后端 MaxUploadMb 对齐（需求基线：≤100MB）
+    if (file.size > maxBytes) {
+      toast(`文件超过 100MB 上限，无法发送`, 'error');
+      return;
+    }
     setUploading(true);
     try {
       const formData = new FormData();
@@ -54,7 +59,9 @@ export default function Composer() {
       const res = await api<{ file: FileRef }>('/api/files/upload', { formData });
       sendMessage('file', res.file.name, res.file);
     } catch (err) {
-      toast(err instanceof Error ? err.message : '文件上传失败', 'error');
+      const msg = err instanceof Error ? err.message : '文件上传失败';
+      const isNetwork = err instanceof Error && 'status' in err && (err as { status?: number }).status === 0;
+      toast(isNetwork ? '上传中断，请检查网络后重试；若文件较大可稍后再试' : msg, 'error');
     } finally {
       setUploading(false);
     }
