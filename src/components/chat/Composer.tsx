@@ -42,8 +42,10 @@ export default function Composer() {
     }
   }
 
-  const CHUNK_SIZE = 4 * 1024 * 1024; // 分片 4MB，逐片直传，规避代理对单请求大小的限制/超时
-  const MAX_ATTEMPTS = 3;
+  const CHUNK_SIZE = 2 * 1024 * 1024; // 分片 2MB，更小的请求体在 Windows/弱网/杀软环境下更稳
+  const MAX_ATTEMPTS = 4;
+  const CHUNK_TIMEOUT_MS = 60_000; // 单片最多 60s，超时即重试
+  const FINALIZE_TIMEOUT_MS = 60_000;
 
   function newUploadId(): string {
     if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -54,6 +56,13 @@ export default function Composer() {
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** 带超时的 fetch：超时主动 abort，避免长时间挂起后被浏览器判为模糊网络错误 */
+  function withTimeout(ms: number): { signal: AbortSignal; done: () => void } {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), ms);
+    return { signal: controller.signal, done: () => window.clearTimeout(timer) };
   }
 
   async function uploadFileChunked(file: File): Promise<FileRef> {
@@ -75,14 +84,23 @@ export default function Composer() {
       let lastErr: unknown = null;
       let uploaded = false;
       for (let attempt = 0; attempt < MAX_ATTEMPTS && !uploaded; attempt += 1) {
+        const t = withTimeout(CHUNK_TIMEOUT_MS);
         try {
-          await api('/api/files/upload/chunk', { formData });
+          await api('/api/files/upload/chunk', { formData, signal: t.signal });
           uploaded = true;
         } catch (err) {
           lastErr = err;
-          if (attempt < MAX_ATTEMPTS - 1) {
-            await sleep(500 * (attempt + 1));
+          // 4xx（如鉴权失效/超限）重试无意义，立即抛出
+          const status = (err as { status?: number })?.status;
+          if (typeof status === 'number' && status >= 400 && status < 500 && status !== 429) {
+            t.done();
+            throw err;
           }
+          if (attempt < MAX_ATTEMPTS - 1) {
+            await sleep(600 * 2 ** attempt); // 600ms, 1.2s, 2.4s 指数退避
+          }
+        } finally {
+          t.done();
         }
       }
       if (!uploaded) {
@@ -91,16 +109,36 @@ export default function Composer() {
       setProgress(Math.round(((i + 1) / totalChunks) * 100));
     }
 
-    const res = await api<{ file: FileRef }>('/api/files/upload/finalize', {
-      body: {
-        uploadId,
-        chunkCount: totalChunks,
-        originalName: file.name,
-        totalSize: file.size,
-        mime,
-      },
-    });
-    return res.file;
+    // 合并阶段也做有限重试（服务端已做原子落盘，重复 finalize 仅在极端重试时发生）
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const t = withTimeout(FINALIZE_TIMEOUT_MS);
+      try {
+        const res = await api<{ file: FileRef }>('/api/files/upload/finalize', {
+          body: {
+            uploadId,
+            chunkCount: totalChunks,
+            originalName: file.name,
+            totalSize: file.size,
+            mime,
+          },
+          signal: t.signal,
+        });
+        return res.file;
+      } catch (err) {
+        lastErr = err;
+        const status = (err as { status?: number })?.status;
+        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 429) {
+          throw err;
+        }
+        if (attempt < 2) {
+          await sleep(600 * 2 ** attempt);
+        }
+      } finally {
+        t.done();
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('文件合并失败');
   }
 
   async function handlePicked(e: ChangeEvent<HTMLInputElement>) {

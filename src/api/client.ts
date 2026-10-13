@@ -27,6 +27,7 @@ interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
   formData?: FormData;
+  signal?: AbortSignal;
 }
 
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
@@ -46,9 +47,12 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
   let res: Response;
   try {
-    res = await fetch(path, { method: options.method ?? 'GET', headers, body });
-  } catch {
-    throw new ApiError(0, '网络连接失败，请检查与服务器的连接');
+    res = await fetch(path, { method: options.method ?? 'GET', headers, body, signal: options.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError(0, '请求超时，服务器未响应');
+    }
+    throw new ApiError(0, '无法连接服务器，请确认服务正在运行且网络正常');
   }
 
   if (res.status === 401) {

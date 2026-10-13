@@ -79,6 +79,41 @@ router.post('/files/upload', authRequired, uploadSingle, ah(async (req, res) => 
 const chunksBase = path.join(config.uploadDir, '.chunks');
 fs.mkdirSync(chunksBase, { recursive: true });
 
+/** Windows 上杀软实时扫描/文件锁可能导致瞬时 EBUSY/EPERM/ENOENT，做有限重试 */
+function retryFs<T>(label: string, fn: () => T, attempts = 5): T {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return fn();
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException)?.code;
+      const retriable = code === 'EBUSY' || code === 'EPERM' || code === 'ENOENT' || code === 'EACCES' || code === 'ENOTEMPTY';
+      // 最后一次、或非可重试错误立即抛出
+      if (i === attempts - 1 || !retriable) {
+        break;
+      }
+      // 同步退避：20ms, 40ms, 80ms, 160ms
+      const wait = 20 * 2 ** i;
+      const end = Date.now() + wait;
+      while (Date.now() < end) {
+        // 忙等极短时间，避免在请求上下文中引入异步复杂度
+      }
+    }
+  }
+  void label;
+  throw lastErr instanceof Error ? lastErr : new Error(`${label} 失败`);
+}
+
+/** 原子写：先写临时文件再 rename，避免读到半截分片（Windows 杀软扫描更稳） */
+function atomicWrite(target: string, data: Buffer): void {
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  retryFs('分片写入', () => {
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, target);
+  });
+}
+
 /** chunk 走内存，写入后立即落到 .chunks/<uploadId>_<index>.part */
 const chunkStorage = multer.memoryStorage();
 const chunkMultipart = multer({ storage: chunkStorage, limits: { fileSize: 20 * 1024 * 1024 } });
@@ -134,18 +169,50 @@ router.post('/files/upload/chunk', authRequired, uploadChunkSingle, ah(async (re
   }
   const f = req.file as Express.Multer.File;
   try {
-    fs.writeFileSync(path.join(chunksBase, `${uploadId}_${chunkIndex}.part`), f.buffer);
+    atomicWrite(path.join(chunksBase, `${uploadId}_${chunkIndex}.part`), f.buffer);
   } catch (err) {
-    throw new HttpError(500, '分片写入失败');
+    const code = (err as NodeJS.ErrnoException)?.code;
+    // 写盘失败多为目录权限/磁盘满/杀软占用，给出可操作的明确错误而非笼统失败
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new HttpError(500, `服务器无写入权限：${config.uploadDir}，请检查目录权限或杀软拦截`);
+    }
+    if (code === 'ENOSPC') {
+      throw new HttpError(507, '服务器磁盘空间不足');
+    }
+    throw new HttpError(500, '分片写入失败，请重试或联系管理员');
   }
-  res.json({ ok: true });
+  res.json({ ok: true, received: f.buffer.length });
 }));
+
+// 已完成合并的 uploadId -> 文件 DTO（用于客户端响应丢失后安全重试，1 小时过期）
+const finalizedUploads = new Map<string, { file: { id: number; name: string; size: number; mime: string }; at: number }>();
+const FINALIZE_TTL_MS = 60 * 60 * 1000;
+
+function rememberFinalized(uploadId: string, file: { id: number; name: string; size: number; mime: string }): void {
+  finalizedUploads.set(uploadId, { file, at: Date.now() });
+  if (finalizedUploads.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of finalizedUploads) {
+      if (now - v.at > FINALIZE_TTL_MS) {
+        finalizedUploads.delete(k);
+      }
+    }
+  }
+}
 
 // 分片全部到齐后合并落盘
 router.post('/files/upload/finalize', authRequired, ah(async (req, res) => {
   const meta = assertUploadMeta(req.body ?? {});
   const originalName = String(req.body?.originalName ?? '').trim().slice(0, 255) || '未命名文件';
   const mime = String(req.body?.mime ?? '') || 'application/octet-stream';
+
+  // 幂等：该 uploadId 已成功合并（上次响应可能丢失），直接返回原结果
+  const done = finalizedUploads.get(meta.uploadId);
+  if (done && Date.now() - done.at < FINALIZE_TTL_MS) {
+    res.status(200).json({ file: done.file, deduplicated: true });
+    return;
+  }
+
   const ext = path.extname(originalName).slice(0, 16).replace(/[^\w.-]/g, '');
   const stored = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
   const finalPath = path.join(config.uploadDir, stored);
@@ -154,32 +221,62 @@ router.post('/files/upload/finalize', authRequired, ah(async (req, res) => {
   try {
     for (let i = 0; i < meta.chunkCount; i += 1) {
       const p = path.join(chunksBase, `${meta.uploadId}_${i}.part`);
-      if (!fs.existsSync(p)) {
-        throw new HttpError(400, `分片缺失（${i}）`);
+      if (!retryFs('分片读取', () => fs.existsSync(p))) {
+        throw new HttpError(400, `分片缺失（${i}），请重新上传`);
       }
       chunkPaths.push(p);
     }
+    // 先校验总大小，再顺序合并；读分片同样对文件锁重试
     let size = 0;
+    const buffers: Buffer[] = [];
     for (const p of chunkPaths) {
-      const buf = fs.readFileSync(p);
+      const buf = retryFs('分片读取', () => fs.readFileSync(p));
       size += buf.length;
       if (size > meta.totalSize) {
         throw new HttpError(413, `文件大小超过限制（${config.maxUploadMb}MB）`);
       }
-      fs.appendFileSync(finalPath, buf);
+      buffers.push(buf);
     }
     if (size !== meta.totalSize) {
-      fs.rmSync(finalPath, { force: true });
-      throw new HttpError(400, '文件大小校验失败');
+      throw new HttpError(400, `文件大小校验失败（期望 ${meta.totalSize}，实得 ${size}），请重新上传`);
     }
-    const { insertId } = await execute(
-      'INSERT INTO files (uploader_id, original_name, stored_name, mime, size) VALUES (?, ?, ?, ?, ?)',
-      [req.user!.id, originalName, stored, mime, size],
-    );
-    res.status(201).json({ file: { id: insertId, name: originalName, size, mime } });
+    // 原子落盘：先写临时文件，关闭后再 rename 为最终名，规避杀软对"正在写的文件"加锁
+    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+    retryFs('文件落盘', () => {
+      const fd = fs.openSync(tmpPath, 'w');
+      try {
+        for (const buf of buffers) {
+          fs.writeSync(fd, buf);
+        }
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      fs.renameSync(tmpPath, finalPath);
+    });
+
+    let fileId: number;
+    try {
+      const { insertId } = await execute(
+        'INSERT INTO files (uploader_id, original_name, stored_name, mime, size) VALUES (?, ?, ?, ?, ?)',
+        [req.user!.id, originalName, stored, mime, size],
+      );
+      fileId = insertId;
+    } catch (dbErr) {
+      // DB 写失败时清理孤儿文件，避免残留
+      fs.rmSync(finalPath, { force: true });
+      throw dbErr;
+    }
+    const fileDto = { id: fileId, name: originalName, size, mime };
+    rememberFinalized(meta.uploadId, fileDto);
+    res.status(201).json({ file: fileDto });
   } finally {
     for (const p of chunkPaths) {
-      fs.rmSync(p, { force: true });
+      try {
+        fs.rmSync(p, { force: true });
+      } catch {
+        // 清理失败不影响响应
+      }
     }
   }
 }));
