@@ -1,0 +1,77 @@
+// ABOUTME: Express server with Vite integration
+// ABOUTME: Handles API routes and serves frontend in dev/prod modes
+
+import { createServer, type Server } from 'http';
+import express from 'express';
+import { config, warnInsecureDefaults } from './config';
+import { initDatabase } from './db';
+import router from './routes/index';
+import { setupVite } from './vite';
+import { handleUpgrade, setupWsEndpoints } from './ws';
+
+const isDev = config.isDev;
+const port = config.port;
+const hostname = process.env.HOSTNAME || 'localhost';
+const app = express();
+// 使用 http.createServer 包装 Express app，以便支持 WebSocket 等协议升级
+const server = createServer(app);
+
+async function startServer(): Promise<Server> {
+  warnInsecureDefaults();
+  // 初始化 MySQL：自动建库建表、种子管理员
+  await initDatabase();
+  // 请求日志（仅开发环境）
+  if (isDev) {
+    app.use((req, res, next) => {
+      const start = Date.now();
+      res.on('finish', () => {
+        const ms = Date.now() - start;
+        console.log(`${req.method} ${req.url} - ${ms}ms`);
+      });
+      next();
+    });
+  }
+
+  // 添加请求体解析
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // 注册 API 路由
+  app.use(router);
+
+  // 集成 Vite（开发模式）或静态文件服务（生产模式）
+  await setupVite(app);
+
+  // 注册 WebSocket 端点（/ws/*）并接管 upgrade
+  setupWsEndpoints();
+  server.on('upgrade', handleUpgrade);
+
+  // 全局错误处理（必须声明 4 个参数，Express 才会识别为错误中间件）
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = 'status' in err ? (err as { status?: number }).status ?? 500 : 500;
+    // 4xx 属于业务拒绝（如待审核登录），不记入错误日志；5xx 才需要排查
+    if (status >= 500) {
+      console.error('Server error:', err);
+    }
+    res.status(status).json({
+      error: err.message || 'Internal server error',
+    });
+  });
+
+  server.once('error', err => {
+    console.error('Server error:', err);
+    process.exit(1);
+  });
+
+  server.listen(port, () => {
+    console.log(`\n✨ Server running at http://${hostname}:${port}`);
+    console.log(`📝 Environment: ${isDev ? 'development' : 'production'}\n`);
+  });
+
+  return server;
+}
+
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
