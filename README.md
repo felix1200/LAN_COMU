@@ -51,21 +51,18 @@
 ## 开发环境（本机调试）
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env        # 按实际修改数据库连接
-pnpm dev                    # http://localhost:5000（Express + Vite 中间件 + WS 同端口）
+npm run dev                 # http://localhost:5000（Express + Vite 中间件 + WS 同端口）
 ```
+
+> 依赖管理器仅需 **npm**（随 Node.js 自带），无需 pnpm/yarn。
 
 ## Windows 内网服务器部署（生产）
 
 ### 1. 环境准备
 
-1. **Node.js 20+**（建议 LTS）：<https://nodejs.org> 安装后执行：
-   ```powershell
-   corepack enable
-   corepack prepare pnpm@latest --activate
-   ```
-   或 `npm i -g pnpm`。
+1. **Node.js 20+**（建议 LTS）：<https://nodejs.org> 安装后自带 npm，无需额外配置。
 2. **MySQL 8**（或 MariaDB 10.4+）：安装后创建一个数据库账号（也可直接用 root）：
    ```sql
    CREATE USER 'im_app'@'localhost' IDENTIFIED BY '设置一个强密码';
@@ -97,7 +94,7 @@ pnpm dev                    # http://localhost:5000（Express + Vite 中间件 +
 ### 3. 构建与启动
 
 ```powershell
-pnpm install
+npm install
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1   # 产出 dist/ 与 dist-server/server.js
 powershell -ExecutionPolicy Bypass -File scripts/start.ps1   # NODE_ENV=production 启动
 ```
@@ -148,7 +145,7 @@ location / {
 ```bash
 bash scripts/api-smoke.sh     # REST 全链路：注册→审核→登录→私聊/群聊→文件→管理后台→权限负例
 node scripts/ws-smoke.mjs     # WS 端到端：双端连接 + 实时投递
-pnpm validate                 # tsc + eslint + stylelint
+npm run validate               # tsc + eslint + stylelint
 ```
 
 ## 安全说明

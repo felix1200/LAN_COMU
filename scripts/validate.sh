@@ -6,5 +6,5 @@ COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
 cd "${COZE_WORKSPACE_PATH}"
 
 echo "🔍 Running validate..."
-pnpm validate
+npm run validate
 echo "✅ Validate passed!"

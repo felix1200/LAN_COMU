@@ -3,14 +3,11 @@ $ErrorActionPreference = "Stop"
 $workspace = if ($env:COZE_WORKSPACE_PATH) { $env:COZE_WORKSPACE_PATH } else { (Get-Location).Path }
 Set-Location $workspace
 
-$lockfile = Join-Path $workspace "pnpm-lock.yaml"
+$lockfile = Join-Path $workspace "package-lock.json"
 $modulesDirectory = Join-Path $workspace "node_modules"
-$modulesManifest = Join-Path $modulesDirectory ".modules.yaml"
 $lockHashFile = Join-Path $modulesDirectory ".coze-lockfile-sha256"
 
-if (-not (Test-Path $lockfile)) {
-  throw "pnpm-lock.yaml is required to install dependencies."
-}
+$lockfile = if (Test-Path $lockfile) { $lockfile } else { Join-Path $workspace "package.json" }
 
 $lockHash = (Get-FileHash -LiteralPath $lockfile -Algorithm SHA256).Hash
 $cachedLockHash = if (Test-Path $lockHashFile) {
@@ -19,15 +16,15 @@ $cachedLockHash = if (Test-Path $lockHashFile) {
   ""
 }
 
-if ((Test-Path $modulesManifest) -and $cachedLockHash -eq $lockHash) {
-  Write-Host "Dependencies already match pnpm-lock.yaml; skipping install."
+if ((Test-Path $modulesDirectory) -and $cachedLockHash -eq $lockHash) {
+  Write-Host "Dependencies already installed; skipping npm install."
   return
 }
 
-Write-Host "Installing dependencies..."
-& pnpm install --frozen-lockfile --prefer-offline --loglevel debug --reporter=append-only
+Write-Host "Installing dependencies (npm)..."
+& npm install
 if ($LASTEXITCODE -ne 0) {
-  throw "pnpm install failed with exit code $LASTEXITCODE."
+  throw "npm install failed with exit code $LASTEXITCODE."
 }
 
 Set-Content -LiteralPath $lockHashFile -Value $lockHash -NoNewline

@@ -4,5 +4,5 @@ $workspace = if ($env:COZE_WORKSPACE_PATH) { $env:COZE_WORKSPACE_PATH } else { (
 Set-Location $workspace
 
 Write-Host "Running validate..."
-& pnpm validate
+& npm run validate
 exit $LASTEXITCODE

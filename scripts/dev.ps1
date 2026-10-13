@@ -41,7 +41,7 @@ if (Test-Path $pidFile) {
 $previousPort = $env:PORT
 $env:PORT = "$port"
 try {
-  $process = Start-Process -FilePath $env:ComSpec -ArgumentList @("/d", "/s", "/c", "pnpm tsx watch server/server.ts") -WorkingDirectory $workspace -RedirectStandardOutput $logFile -RedirectStandardError $errorLogFile -PassThru
+  $process = Start-Process -FilePath $env:ComSpec -ArgumentList @("/d", "/s", "/c", "npx tsx watch server/server.ts") -WorkingDirectory $workspace -RedirectStandardOutput $logFile -RedirectStandardError $errorLogFile -PassThru
 } finally {
   if ($null -eq $previousPort) { Remove-Item Env:PORT -ErrorAction SilentlyContinue } else { $env:PORT = $previousPort }
 }

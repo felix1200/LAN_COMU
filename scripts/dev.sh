@@ -40,7 +40,7 @@ timeout_watchdog_enabled() {
 }
 
 # 真正被 detach 的是这层 bash wrapper：它是进程组 leader，组内 watchdog 到点回收整组
-# （wrapper -> pnpm -> tsx -> node）；被包的进程自己先退出时也顺手清空进程组，不留残余。
+# （wrapper -> npx -> tsx -> node）；被包的进程自己先退出时也顺手清空进程组，不留残余。
 RUN_WITH_TIMEOUT="$(declare -f timeout_watchdog_enabled)"'
 timeout_seconds=$1
 shift
@@ -108,7 +108,7 @@ stop_detached() {
   kill -KILL -- "-${pid}" 2>/dev/null || true
 }
 
-# 监听端口的是孙进程（pnpm -> tsx -> node），只清端口会漏掉上层 pnpm/tsx，
+# 监听端口的是孙进程（npm/npx -> tsx -> node），只清端口会漏掉上层 npm/npx/tsx，
 # 所以先按上次记录的 PID 把整个进程组回收掉。
 if [[ -f "${PID_FILE}" ]]; then
   stop_detached "$(cat "${PID_FILE}" 2>/dev/null || true)"
@@ -124,7 +124,7 @@ mkdir -p "${LOG_DIR}"
 
 export PORT="${DEPLOY_RUN_PORT}"
 server_pid="$(spawn_detached "${COZE_WORKSPACE_PATH}" "${LOG_FILE}" \
-  "$(command -v pnpm)" tsx watch server/server.ts)"
+  "$(command -v npx)" tsx watch server/server.ts)"
 echo "${server_pid}" > "${PID_FILE}"
 
 sleep 1

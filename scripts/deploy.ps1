@@ -18,19 +18,14 @@ $workspace = $PSScriptRoot | Split-Path -Parent
 Set-Location $workspace
 Write-Host "`n===== 内信 IntraChat 部署 @ $workspace =====" -ForegroundColor Cyan
 
-function Ensure-Pnpm {
+function Ensure-Node {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "未检测到 Node.js，请先安装 Node.js 20+ LTS（https://nodejs.org）。"
   }
-  if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Host "[步骤0] 启用 pnpm ..."
-    corepack enable
-    corepack prepare pnpm@latest --activate
-    if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-      throw "启用 pnpm 失败，请手动执行：npm i -g pnpm"
-    }
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "未检测到 npm，请重装 Node.js LTS（npm 随附）。"
   }
-  Write-Host ("pnpm: " + (pnpm --version))
+  Write-Host ("node: " + (node --version) + "  /  npm: " + (npm --version))
 }
 
 function Ensure-Env {
@@ -52,11 +47,12 @@ function Ensure-Env {
 
 function Step-Build {
   Write-Host "[步骤1] 安装依赖 ..."
-  pnpm install --frozen-lockfile --prefer-offline
+  npm install
+  if ($LASTEXITCODE -ne 0) { throw "npm install 失败（退出码 $LASTEXITCODE）。若网络较慢可加 --registry=https://registry.npmmirror.com" }
   Write-Host "[步骤2] 构建前端 + 后端 ..."
-  pnpm vite build
+  npx vite build
   if ($LASTEXITCODE -ne 0) { throw "前端构建失败" }
-  pnpm tsup server/server.ts --format cjs --platform node --target node20 --outDir dist-server --no-splitting --no-minify --external vite --shims
+  npx tsup server/server.ts --format cjs --platform node --target node20 --outDir dist-server --no-splitting --no-minify --external vite --shims
   if ($LASTEXITCODE -ne 0) { throw "后端构建失败" }
   Write-Host "[步骤2] 构建完成：dist/（前端）、dist-server/server.js（后端）" -ForegroundColor Green
 }
@@ -81,7 +77,7 @@ function Step-Run {
 }
 
 # ---------- 主流程 ----------
-Ensure-Pnpm
+Ensure-Node
 
 if ($Start) {
   if (-not (Test-Path "dist-server/server.js")) { throw "未发现 dist-server\\server.js，请先不带 -Start 运行一次完成构建。" }
