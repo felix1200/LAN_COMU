@@ -1,7 +1,7 @@
 // ABOUTME: 认证路由：注册（待审核）、登录（状态校验）、当前用户、修改密码
 
 import { Router } from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { authRequired, loginLockRemaining, recordLoginFailure, resetLoginFailures, signToken } from '../auth';
 import { execute, queryOne } from '../db';
 import { ah, HttpError, requireString } from '../util';

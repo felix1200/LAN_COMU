@@ -1,7 +1,7 @@
 // ABOUTME: 管理员路由：注册审核、账号管理（禁用/启用/重置密码/删除=禁用）、数据概览
 
 import { Router } from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { adminRequired, authRequired } from '../auth';
 import { execute, query, queryOne } from '../db';
 import { forceDisconnect, onlineUserIds, sendToUser } from '../hub';

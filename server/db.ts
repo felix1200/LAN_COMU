@@ -2,7 +2,7 @@
 // ABOUTME: 兼容 MySQL 8.0+ 与 MariaDB 10.5+
 
 import mysql from 'mysql2/promise';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { config } from './config';
 
 let pool: mysql.Pool;
