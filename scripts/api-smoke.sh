@@ -193,6 +193,33 @@ FID=$(curl -s -X POST -H "Authorization: Bearer $T1" -F "file=@/tmp/smk-$TS.txt"
   "$BASE/api/files/upload" | json_field "d['file']['id']") || fail "upload"
 say "POST /api/files/upload"
 
+# ---------- 9b. 分片上传：逐片上传 + finalize 合并 ----------
+head -c $((7*1024*1024)) /dev/urandom > "/tmp/smk-chunk-$TS.bin"
+UPID="smk$(date +%s%N)"
+python3 - "$BASE" "$T1" "$UPID" "/tmp/smk-chunk-$TS.bin" <<'PY' || fail "chunk upload"
+import sys, subprocess, os, json, math
+base, tok, upid, f = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+size = os.path.getsize(f); ck = 4*1024*1024; n = math.ceil(size/ck)
+with open(f,'rb') as fh:
+    for i in range(n):
+        data = fh.read(ck)
+        p = f'/tmp/smk_{upid}_{i}.part'
+        with open(p,'wb') as o: o.write(data)
+        r = subprocess.run(['curl','-s','-o','/dev/null','-X','POST','-H',f'Authorization: Bearer {tok}',
+            '-F',f'file=@{p}','-F',f'uploadId={upid}','-F',f'chunkIndex={i}','-F',f'totalChunks={n}',
+            '-F',f'totalSize={size}','-F','originalName=分片文件.bin','-F','mime=application/octet-stream',
+            f'{base}/api/files/upload/chunk'],capture_output=True)
+        os.remove(p)
+        if r.returncode != 0: print('chunk curl failed'); sys.exit(1)
+body = json.dumps({"uploadId":upid,"chunkCount":n,"originalName":"分片文件.bin","totalSize":size,"mime":"application/octet-stream"})
+r = subprocess.run(['curl','-s','-X','POST','-H',f'Authorization: Bearer {tok}','-H','Content-Type: application/json',
+    '-d',body,f'{base}/api/files/upload/finalize'],capture_output=True,text=True)
+j = json.loads(r.stdout)
+if j.get('file',{}).get('size') != size or '分片文件' not in j['file']['name']: sys.exit(1)
+PY
+say "POST /api/files/upload/chunk + finalize（分片合并）"
+rm -f "/tmp/smk-chunk-$TS.bin"
+
 curl -s -X POST -H "Authorization: Bearer $T1" -H 'Content-Type: application/json' \
   -d "{\"type\":\"file\",\"content\":\"smk-$TS.txt\",\"fileId\":$FID}" \
   "$BASE/api/conversations/$CID/messages" | grep -q '"type":"file"' || fail "file message"
