@@ -121,6 +121,7 @@ const chunkMultipart = multer({ storage: chunkStorage, limits: { fileSize: 20 * 
 function uploadChunkSingle(req: Request, res: Response, next: NextFunction): void {
   chunkMultipart.single('file')(req, res, (err: unknown) => {
     if (err) {
+      console.error('[upload] chunk multipart error:', err instanceof Error ? err.message : String(err));
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         next(new HttpError(413, '单次分片超过 20MB'));
         return;
@@ -206,6 +207,7 @@ router.post('/files/upload/finalize', authRequired, ah(async (req, res) => {
   const meta = assertUploadMeta(req.body ?? {});
   const originalName = String(req.body?.originalName ?? '').trim().slice(0, 255) || '未命名文件';
   const mime = String(req.body?.mime ?? '') || 'application/octet-stream';
+  console.log(`[upload] finalize start uploadId=${meta.uploadId} chunks=${meta.chunkCount} size=${meta.totalSize} name=${originalName}`);
 
   // 幂等：该 uploadId 已成功合并（上次响应可能丢失），直接返回原结果
   const done = finalizedUploads.get(meta.uploadId);

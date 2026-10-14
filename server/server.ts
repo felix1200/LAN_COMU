@@ -22,13 +22,24 @@ async function startServer(): Promise<Server> {
   warnInsecureDefaults();
   // 初始化 MySQL：自动建库建表、种子管理员
   await initDatabase();
-  // 请求日志（仅开发环境）
+  // 请求日志：开发环境记录所有请求；生产环境仅记录 API 请求（便于定位上传等接口问题）
   if (isDev) {
     app.use((req, res, next) => {
       const start = Date.now();
       res.on('finish', () => {
-        const ms = Date.now() - start;
-        console.log(`${req.method} ${req.url} - ${ms}ms`);
+        console.log(`${req.method} ${req.url} - ${res.statusCode} ${Date.now() - start}ms`);
+      });
+      next();
+    });
+  } else {
+    app.use((req, res, next) => {
+      if (!req.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+      const start = Date.now();
+      res.on('finish', () => {
+        console.log(`[api] ${req.method} ${req.url} - ${res.statusCode} ${Date.now() - start}ms`);
       });
       next();
     });
@@ -49,11 +60,13 @@ async function startServer(): Promise<Server> {
   server.on('upgrade', handleUpgrade);
 
   // 全局错误处理（必须声明 4 个参数，Express 才会识别为错误中间件）
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const status = 'status' in err ? (err as { status?: number }).status ?? 500 : 500;
-    // 4xx 属于业务拒绝（如待审核登录），不记入错误日志；5xx 才需要排查
+    // 一律记录：4xx 也是排查上传/鉴权问题的重要线索；5xx 记录完整堆栈
     if (status >= 500) {
-      console.error('Server error:', err);
+      console.error(`[error] ${req.method} ${req.url} -> ${status}:`, err.stack || err);
+    } else {
+      console.warn(`[warn] ${req.method} ${req.url} -> ${status}: ${err.message}`);
     }
     res.status(status).json({
       error: err.message || 'Internal server error',
