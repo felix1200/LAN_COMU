@@ -1,5 +1,12 @@
 import { Loader2, Paperclip, Send } from 'lucide-react';
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react';
 import { api } from '../../api/client';
 import type { FileRef } from '../../api/types';
 import { toast } from '../../lib/toast';
@@ -10,8 +17,10 @@ export default function Composer() {
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
 
   function autoResize() {
     const el = textareaRef.current;
@@ -148,19 +157,15 @@ export default function Composer() {
     throw e;
   }
 
-  async function handlePicked(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) {
-      return;
-    }
+  /** 统一上传入口：文件选择、粘贴、拖拽复用同一套校验与上传逻辑 */
+  async function uploadFile(file: File): Promise<void> {
     const maxBytes = 100 * 1024 * 1024; // 与后端 MaxUploadMb 对齐（需求基线：≤100MB）
     if (file.size > maxBytes) {
-      toast(`文件超过 100MB 上限，无法发送`, 'error');
+      toast(`${file.name}：文件超过 100MB 上限，无法发送`, 'error');
       return;
     }
     if (file.size === 0) {
-      toast('不能发送空文件', 'error');
+      toast(`${file.name}：不能发送空文件`, 'error');
       return;
     }
     setUploading(true);
@@ -170,26 +175,100 @@ export default function Composer() {
       sendMessage('file', fileRef.name, fileRef);
     } catch (err) {
       console.error(`[upload] ${file.name} 上传失败`, err);
-      const status = (err as { status?: number })?.status;
-      if (status === 0) {
-        const isTimeout = err instanceof Error && err.message.includes('超时');
-        toast(
-          isTimeout
-            ? `上传超时：${file.name} 未能完成，请检查网络、杀毒软件后重试`
-            : `无法连接服务器：${file.name} 未上传，请确认服务运行正常`,
-          'error',
-        );
-      } else {
-        toast(err instanceof Error ? err.message : '文件上传失败', 'error');
-      }
+      toast(err instanceof Error ? `${file.name}：${err.message}` : `${file.name}：文件上传失败`, 'error');
     } finally {
       setUploading(false);
       setProgress(0);
     }
   }
 
+  /** 多文件串行上传（避免并发写进度条互相覆盖） */
+  async function uploadFiles(files: File[]): Promise<void> {
+    for (const file of files) {
+      await uploadFile(file);
+    }
+  }
+
+  function handlePicked(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) {
+      return;
+    }
+    void uploadFile(file);
+  }
+
+  /** 粘贴图片：剪贴板里的 image 文件转为 File 后发送 */
+  function handlePaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) {
+      return;
+    }
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item && item.kind === 'file' && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) {
+          files.push(f);
+        }
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault(); // 阻止图片以 base64 文本形式落入输入框
+      void uploadFiles(files);
+    }
+  }
+
+  function handleDragEnter(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragActive(true);
+  }
+
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setDragActive(false);
+    }
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) {
+      if (files.length > 0) {
+        toast('仅支持拖拽图片发送', 'error');
+      }
+      return;
+    }
+    void uploadFiles(images);
+  }
+
   return (
-    <div className="shrink-0 border-t border-line bg-paper px-4 pb-3 pt-2.5">
+    <div
+      className={`relative shrink-0 border-t border-line bg-paper px-4 pb-3 pt-2.5 transition-colors duration-100 ${dragActive ? 'ring-2 ring-inset ring-signal/40' : ''}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-paper/85 backdrop-blur-[1px]">
+          <span className="font-mono text-xs tracking-widest text-signal">松开以发送图片</span>
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
         <div className="flex items-center gap-1 pb-1.5">
           <button
@@ -217,7 +296,8 @@ export default function Composer() {
             sendTyping();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行（≤2000 字）"
+          onPaste={handlePaste}
+          placeholder="输入消息，Enter 发送，Shift+Enter 换行（≤2000 字）；可粘贴或拖拽图片发送"
           className="max-h-32 flex-1 resize-none rounded-md border border-line bg-white px-3 py-2.5 text-[14px] leading-[1.6] outline-none transition-colors duration-100 focus:border-signal"
         />
 

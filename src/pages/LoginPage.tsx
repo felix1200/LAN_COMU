@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import { useAuth } from '../store/auth';
+import { APP_VERSION } from '../version';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -99,6 +100,7 @@ export default function LoginPage() {
         </Link>
       </div>
       <p className="mt-2 text-[12px] leading-5 text-sub">新账号需经管理员审核通过后方可登录。</p>
+      <p className="mt-6 text-right font-mono text-[11px] tabular-nums text-sub/70">{APP_VERSION}</p>
     </AuthLayout>
   );
 }
