@@ -1,6 +1,8 @@
 // ABOUTME: Express server with Vite integration
 // ABOUTME: Handles API routes and serves frontend in dev/prod modes
 
+// 必须最先执行：无论从哪个工作目录启动，都先把 cwd 锁定到包根（修复 system32 启动问题）
+import './ensure-cwd';
 import { createServer, type Server } from 'http';
 import express from 'express';
 import { config, warnInsecureDefaults } from './config';
