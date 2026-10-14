@@ -42,10 +42,10 @@
 
 - **账号规则**：用户名 `^[a-zA-Z0-9_]{3,20}$`；密码仅要求 ≥6 位（≤72），不强制复杂度；注册三字段（用户名/密码/姓名），需管理员审核；登录失败连续 5 次锁 30 分钟（内存 Map，返回 429 + `lockedRemaining`）。
 - **会话**：JWT 永久有效（`signToken` 不设 expiresIn），登录态恢复时仍经 `loadAuthUser` 校验状态。
-- **消息**：仅 `text` / `file` 两种类型，无 image 类型、聊天文件不做在线预览（仅下载）；文字 ≤2000 字；私聊单条已读、群聊 X/Y 已读（用成员 `lastReadAt` 比对消息时间）。
+- **消息**：仅 `text` / `file` 两种类型，无独立 image 类型；`file` 类型中 MIME 为 `image/*`（或以图片扩展名兜底）的图片消息在聊天内直接缩略图预览、点击放大（前端 `fetch`+`blob` 复用为缩略图与大图），非图片文件仍仅下载；文字 ≤2000 字；私聊单条已读、群聊 X/Y 已读（用成员 `lastReadAt` 比对消息时间）。
 - **搜索**：`GET /api/conversations/search?q=&limit=&before=`（注意参数名 `q`）检索本用户参与会话的历史文字消息；用户搜索见 `GET /api/users?keyword=`。
 - **头像**：`POST /users/me/avatar`（multer 字段名 `file`，≤2MB，jpg/png/webp）+ `DELETE /users/me/avatar`；`users.avatar` 存 files.id；头像经 `GET /api/files/:id?inline=1` 内联展示。
-- **文件**：≤100MB；下载需上传者本人或会话成员，前端一律 `fetch`+`blob`（禁裸 `<a download>`）。
+- **文件**：≤100MB；下载需上传者本人或会话成员，前端一律 `fetch`+`blob`（禁裸 `<a download>`）；`GET /api/files/:id?inline=1` 对图片文件以内联流返回（供聊天图片预览），非图片仍 `attachment`。
 - **管理员**：仅「注册审核」+「用户管理」两个面板；**无**群聊管理/统计/硬删除；删除账号 = `disable`（标记禁用、保留历史聊天记录），已删除用户不可重新删除。
 - **首次登录强制改密**：种子管理员创建时 `users.must_change_password=1`；登录/`/auth/me` 返回 `mustChangePassword`；前端 `App` 路由守卫在 `user.mustChangePassword` 为真时强制渲染 `FirstLoginPasswordChange`（未改密无法进入任何业务/管理界面）；`PUT /auth/password` 与管理员 `reset-password` 均会将该标志置 `0`。
 

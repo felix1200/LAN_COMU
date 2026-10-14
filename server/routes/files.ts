@@ -314,9 +314,11 @@ router.get('/files/:id', authRequired, ah(async (req, res) => {
     throw new HttpError(404, '文件已丢失，请联系管理员');
   }
 
+  // 带 ?inline=1 且为图片时，允许以内联（image 流）返回，供聊天图片缩略图预览使用（鉴权已在上方校验）
+  const wantInline = req.query.inline === '1' || req.query.inline === 'true';
   const isAvatar = (await queryOne<{ ok: number }>('SELECT 1 AS ok FROM users WHERE avatar = ?', [file.id])) !== null;
   const isImage = file.mime.startsWith('image/');
-  const inline = isAvatar && isImage;
+  const inline = isImage && (isAvatar || wantInline);
   res.setHeader('Content-Type', inline ? file.mime : 'application/octet-stream');
   res.setHeader('Content-Length', String(file.size));
   res.setHeader(
