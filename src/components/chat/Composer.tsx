@@ -104,7 +104,10 @@ export default function Composer() {
         }
       }
       if (!uploaded) {
-        throw lastErr instanceof Error ? lastErr : new Error('分片上传失败');
+        const ctx = lastErr instanceof Error ? `：${lastErr.message}` : '';
+        const e = new Error(`第 ${i + 1}/${totalChunks} 片上传失败${ctx}`) as Error & { status?: number };
+        e.status = (lastErr as { status?: number })?.status;
+        throw e;
       }
       setProgress(Math.round(((i + 1) / totalChunks) * 100));
     }
@@ -138,7 +141,10 @@ export default function Composer() {
         t.done();
       }
     }
-    throw lastErr instanceof Error ? lastErr : new Error('文件合并失败');
+    const ctx = lastErr instanceof Error ? `：${lastErr.message}` : '';
+    const e = new Error(`文件合并失败${ctx}`) as Error & { status?: number };
+    e.status = (lastErr as { status?: number })?.status;
+    throw e;
   }
 
   async function handlePicked(e: ChangeEvent<HTMLInputElement>) {
@@ -162,9 +168,19 @@ export default function Composer() {
       const fileRef = await uploadFileChunked(file);
       sendMessage('file', fileRef.name, fileRef);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '文件上传失败';
-      const isNetwork = err instanceof Error && 'status' in err && (err as { status?: number }).status === 0;
-      toast(isNetwork ? `上传中断：${file.name} 未能传输完成，请检查网络后重试` : msg, 'error');
+      console.error(`[upload] ${file.name} 上传失败`, err);
+      const status = (err as { status?: number })?.status;
+      if (status === 0) {
+        const isTimeout = err instanceof Error && err.message.includes('超时');
+        toast(
+          isTimeout
+            ? `上传超时：${file.name} 未能完成，请检查网络、杀毒软件后重试`
+            : `无法连接服务器：${file.name} 未上传，请确认服务运行正常`,
+          'error',
+        );
+      } else {
+        toast(err instanceof Error ? err.message : '文件上传失败', 'error');
+      }
     } finally {
       setUploading(false);
       setProgress(0);

@@ -181,6 +181,7 @@ router.post('/files/upload/chunk', authRequired, uploadChunkSingle, ah(async (re
     }
     throw new HttpError(500, '分片写入失败，请重试或联系管理员');
   }
+  console.log(`[upload] received chunk ${chunkIndex} uploadId=${uploadId} bytes=${f.buffer.length}`);
   res.json({ ok: true, received: f.buffer.length });
 }));
 
@@ -269,6 +270,7 @@ router.post('/files/upload/finalize', authRequired, ah(async (req, res) => {
     }
     const fileDto = { id: fileId, name: originalName, size, mime };
     rememberFinalized(meta.uploadId, fileDto);
+    console.log(`[upload] finalize ok uploadId=${meta.uploadId} fileId=${fileId} chunks=${meta.chunkCount} size=${size} name=${originalName}`);
     res.status(201).json({ file: fileDto });
   } finally {
     for (const p of chunkPaths) {
