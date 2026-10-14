@@ -3,7 +3,7 @@ requires = [ "nodejs-24" ]
 project_type = "web"
 template = "vite"
 version = "0.1.8"
-appliedPatches = [ ]
+appliedPatches = [ "vite/replace-npx-with-pnpm@0.0.13" ]
 
 [dev]
 build = [ "bash", "./scripts/prepare.sh" ]
