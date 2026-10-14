@@ -42,7 +42,7 @@ export default function Composer() {
     }
   }
 
-  const CHUNK_SIZE = 2 * 1024 * 1024; // 分片 2MB，更小的请求体在 Windows/弱网/杀软环境下更稳
+  const CHUNK_SIZE = 256 * 1024; // 分片 256KB：更小的请求体便于穿过企业防火墙/代理对 POST body 的限制（100MB≈400 片，<后端 512 片上限）
   const MAX_ATTEMPTS = 4;
   const CHUNK_TIMEOUT_MS = 60_000; // 单片最多 60s，超时即重试
   const FINALIZE_TIMEOUT_MS = 60_000;
