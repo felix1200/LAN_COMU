@@ -86,7 +86,7 @@ export default function Composer() {
       for (let attempt = 0; attempt < MAX_ATTEMPTS && !uploaded; attempt += 1) {
         const t = withTimeout(CHUNK_TIMEOUT_MS);
         try {
-          await api('/api/files/upload/chunk', { formData, signal: t.signal });
+          await api('/api/files/upload/chunk', { method: 'POST', formData, signal: t.signal });
           uploaded = true;
         } catch (err) {
           lastErr = err;
@@ -118,6 +118,7 @@ export default function Composer() {
       const t = withTimeout(FINALIZE_TIMEOUT_MS);
       try {
         const res = await api<{ file: FileRef }>('/api/files/upload/finalize', {
+          method: 'POST',
           body: {
             uploadId,
             chunkCount: totalChunks,

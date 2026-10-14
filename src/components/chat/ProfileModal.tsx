@@ -36,7 +36,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      await api<{ avatarId: number }>('/api/users/me/avatar', { formData });
+      await api<{ avatarId: number }>('/api/users/me/avatar', { method: 'POST', formData });
       await refresh();
       toast('头像已更新', 'success');
     } catch (err) {
